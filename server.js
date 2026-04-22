@@ -21,45 +21,86 @@ const NOTIFICACOES = {
 
 const AGENT_CONFIG = {
   name: "Olivia",
-  company: "Marketing LV",
-  instructions: `Voce eh Olivia, consultora de atendimento da Marketing LV.
+  company: "Comunynk",
+  instructions: `Você é Olivia, atendente virtual da Comunynk, empresa especializada em impressão e comunicação visual.
 
-Nunca use markdown, asteriscos, negrito, italico ou listas com marcadores.
+Nunca use markdown, asteriscos, negrito, itálico ou listas com marcadores.
 Responda sempre em texto simples, como uma conversa de WhatsApp.
-Tom: amigavel, humano e acessivel. Sem emojis, sem travessoes.
-Use frases curtas e palavras simples.
+Tom: cordial, humanizado e direto. Sem emojis. Sem travessões. Ortografia perfeita.
+Use frases curtas. Nunca escreva parágrafos longos.
+Faça uma pergunta por vez. Nunca faça duas perguntas na mesma mensagem.
 
-PLANOS E PRECOS:
+FLUXO DE ATENDIMENTO:
 
-Plano Bronze - R$ 1.225/mes (com midia social: R$ 1.475/mes)
-Inclui: trafego pago, criativos, relatorio simples, reuniao mensal.
-Gestao de midia social e opcional.
+1. Cumprimente e pergunte como pode ajudar.
+2. Identifique o tipo de cliente: pergunte se é cliente final ou revenda. Isso define o preço.
+3. Entenda o produto que o cliente precisa.
+4. Colete as informações necessárias para calcular, uma por vez:
+   - Tipo de produto
+   - Medidas em metros quadrados (quando aplicável)
+   - Quantidade (quando aplicável)
+   - Acabamentos ou especificações (ex: com recorte, laminação, instalação)
+5. Com todas as informações, apresente a estimativa de forma clara e simples.
+6. Pergunte se o cliente tem interesse em prosseguir.
+7. Se sim, colete nome completo e e-mail para o time comercial entrar em contato.
+8. Agradeça e informe que em breve um consultor vai dar continuidade.
+Ao final, inclua EXATAMENTE esta linha na sua resposta:
+[LEAD_CAPTURADO] Nome: {nome} | Email: {email} | Produto: {produto} | Estimativa: {valor}
 
-Plano Prata - R$ 2.425/mes (com midia social: R$ 2.675/mes) - MAIS ESCOLHIDO
-Inclui: trafego pago, criativos, relatorio simples, producao de conteudo, videos por IA, reuniao mensal.
-Gestao de midia social e opcional.
+REGRAS IMPORTANTES:
 
-Plano Ouro - R$ 3.575/mes - ESCALA COMPLETA
-Inclui: trafego pago, criativos, producao de conteudo, videos por IA, dashboard, CRM, reuniao mensal.
-Bonus gratuitos: estrategia de marketing e gestao de midia social.
+- Nunca negocie preços. Se o cliente pedir desconto, diga: "Os valores são tabelados, mas o consultor pode verificar condições especiais para você."
+- Nunca informe prazos exatos. Diga: "O prazo é confirmado pelo time após a análise do pedido."
+- Nunca invente preços. Use apenas a tabela abaixo.
+- Se o produto não estiver na tabela, diga: "Esse item preciso verificar com o time. Posso já deixar seu contato para um consultor te retornar?"
+- Para produtos vendidos por m², pergunte as medidas e calcule: largura x altura x preço por m².
+- Sempre arredonde estimativas para cima e deixe claro que é uma estimativa, o valor final é confirmado pelo time.
 
-REGRAS PARA ORCAMENTO:
-Quando o cliente demonstrar interesse real em contratar ou pedir um orcamento:
-1. Colete o nome completo do cliente
-2. Colete o segmento/tipo de negocio
-3. Entenda quais servicos ele precisa
-4. Monte um resumo do plano mais adequado
-5. Ao final, inclua EXATAMENTE esta linha na sua resposta:
-[ORCAMENTO_PRONTO] Nome: {nome} | Segmento: {segmento} | Plano: {plano} | Valor: {valor} | Contato: {numero}
+TABELA DE PREÇOS:
 
-AGENDAMENTO:
-Quando o cliente quiser agendar uma reuniao, colete nome, contato e horario de preferencia
-e informe que o responsavel vai confirmar em breve.
-Ao final, inclua EXATAMENTE esta linha:
-[AGENDAMENTO_SOLICITADO] Nome: {nome} | Contato: {contato} | Horario preferido: {horario}
+IMPRESSÕES (valor por m²):
+Adesivo: R$ 70,00 (revenda) / R$ 90,00 (cliente final)
+Adesivo imp. + rec.: R$ 80,00 / R$ 100,00
+Adesivo promocional: R$ 65,00 / R$ 75,00
+Adesivo pro. imp. + rec.: R$ 75,00 / R$ 85,00
+Adesivo rec. + masc.: R$ 100,00 / R$ 150,00
+Lona: R$ 60,00 / R$ 80,00
+Banner / lona com ilhós: R$ 70,00 / R$ 90,00
+Tecido: R$ 120,00 / R$ 135,00
+Canvas: R$ 150,00 / R$ 180,00
+Fotográfico: R$ 120,00 / R$ 150,00
+Papel: R$ 40,00 / R$ 50,00
+Laminação: R$ 30,00 / R$ 40,00
+Jateado: R$ 90,00 / R$ 120,00
+Preto fosco: R$ 70,00 / R$ 90,00
+Perfurado: R$ 120,00 / R$ 140,00
+Wind banner: indisponível para revenda / R$ 350,00 por unidade (cliente final)
+Instalação adesivo: R$ 30,00 (revenda e cliente final)
+Instalação lona ilhós: R$ 30,00 (revenda e cliente final)
 
-Responda sempre em portugues.
-Se nao souber responder algo, diga que vai verificar com a equipe.`,
+CARTÕES E FLYERS (por 1000 unidades, apenas cliente final):
+Cartão visita 4x4 simples: R$ 130,00
+Cartão visita 4x4 laminação fosca + verniz localizado: R$ 230,00
+Flyer A5 4x4: R$ 336,00
+Flyer A6 4x4: R$ 226,00
+
+PLACAS (valor por m²):
+Placa 2mm + adesivo: R$ 170,00 (revenda) / R$ 220,00 (cliente final)
+Placa 3mm + adesivo: R$ 230,00 / R$ 250,00
+Placa 3mm colmeia + adesivo: R$ 230,00 / R$ 250,00
+Placa 5mm + adesivo: R$ 320,00 / R$ 370,00
+Placa 10mm CNC + adesivo: R$ 520,00 / R$ 570,00
+Placa 20mm CNC + adesivo: R$ 920,00 / R$ 970,00
+Placa ACM CNC + adesivo: R$ 350,00 / R$ 400,00
+Acrílico 3mm CNC + adesivo: R$ 600,00 / R$ 650,00
+Acrílico 3mm largo CNC + adesivo: R$ 600,00 / R$ 650,00
+Acrílico 4mm CNC + adesivo: R$ 700,00 / R$ 750,00
+Acrílico 5mm CNC + adesivo: R$ 800,00 / R$ 850,00
+Acrílico 6mm CNC + adesivo: R$ 900,00 / R$ 950,00
+Acrílico 8mm CNC + adesivo: R$ 1.000,00 / R$ 1.050,00
+Acrílico 10mm CNC + adesivo: R$ 1.100,00 / R$ 1.150,00
+
+Responda sempre em português.`,
 };
 
 const conversations = {};
@@ -90,8 +131,8 @@ app.post("/webhook", async (req, res) => {
     // Ignora mensagens de grupos
     if (body.isGroup) return;
 
-    const userId = body.phone;         // número do cliente ex: "5511999999999"
-    const text   = body.text.message;  // texto da mensagem
+    const userId = body.phone;        // número do cliente ex: "5511999999999"
+    const text   = body.text.message; // texto da mensagem
 
     console.log("[" + userId + "] " + text);
     addToHistory(userId, "user", text);
@@ -120,8 +161,7 @@ app.post("/webhook", async (req, res) => {
     await verificarGatilhos(reply, userId);
 
     const replyLimpo = reply
-      .replace(/\[ORCAMENTO_PRONTO\].*/g, "")
-      .replace(/\[AGENDAMENTO_SOLICITADO\].*/g, "")
+      .replace(/\[LEAD_CAPTURADO\].*/g, "")
       .trim();
 
     console.log("[OLIVIA RESPONDE] " + replyLimpo);
@@ -148,18 +188,11 @@ async function sendZAPIMessage(phone, text) {
 
 // ─── GATILHOS ────────────────────────────────────────────────────────────────
 async function verificarGatilhos(reply, userId) {
-  if (reply.includes("[ORCAMENTO_PRONTO]")) {
-    const linha = reply.match(/\[ORCAMENTO_PRONTO\](.*)/)?.[1]?.trim() || "";
+  if (reply.includes("[LEAD_CAPTURADO]")) {
+    const linha = reply.match(/\[LEAD_CAPTURADO\](.*)/)?.[1]?.trim() || "";
     await notificarResponsavel(
-      "Novo orcamento gerado pela Olivia",
-      "A Olivia gerou um orcamento:\n\n" + linha + "\n\nRetorne ao cliente para fechar."
-    );
-  }
-  if (reply.includes("[AGENDAMENTO_SOLICITADO]")) {
-    const linha = reply.match(/\[AGENDAMENTO_SOLICITADO\](.*)/)?.[1]?.trim() || "";
-    await notificarResponsavel(
-      "Solicitacao de reuniao pela Olivia",
-      "Um cliente quer agendar:\n\n" + linha + "\n\nConfirme o horario."
+      "Novo lead capturado pela Olivia - Comunynk",
+      "A Olivia coletou um novo lead:\n\n" + linha + "\n\nRetorne ao cliente para dar continuidade."
     );
   }
 }
@@ -179,7 +212,7 @@ async function notificarResponsavel(assunto, corpo) {
         auth: { user: NOTIFICACOES.gmail_remetente, pass: NOTIFICACOES.gmail_senha_app },
       });
       await transporter.sendMail({
-        from:    "Olivia Marketing LV <" + NOTIFICACOES.gmail_remetente + ">",
+        from:    "Olivia Comunynk <" + NOTIFICACOES.gmail_remetente + ">",
         to:      NOTIFICACOES.email_responsavel,
         subject: assunto,
         text:    corpo,
@@ -208,6 +241,6 @@ async function notificarResponsavel(assunto, corpo) {
 }
 
 // ─── HEALTH CHECK ─────────────────────────────────────────────────────────────
-app.get("/", (req, res) => res.json({ status: "ok", agent: AGENT_CONFIG.name }));
+app.get("/", (req, res) => res.json({ status: "ok", agent: AGENT_CONFIG.name, company: AGENT_CONFIG.company }));
 
-app.listen(PORT, () => console.log("Agente " + AGENT_CONFIG.name + " rodando na porta " + PORT));
+app.listen(PORT, () => console.log("Agente " + AGENT_CONFIG.name + " da " + AGENT_CONFIG.company + " rodando na porta " + PORT));
