@@ -12,6 +12,12 @@ const ZAPI_TOKEN         = process.env.ZAPI_TOKEN;
 const ZAPI_CLIENT_TOKEN  = process.env.ZAPI_CLIENT_TOKEN;
 const PORT               = process.env.PORT || 3000;
 
+// Google Calendar (configurar depois)
+const GOOGLE_CALENDAR_ENABLED = process.env.GOOGLE_CALENDAR_ENABLED === "true";
+const GOOGLE_CLIENT_EMAIL     = process.env.GOOGLE_CLIENT_EMAIL     || "";
+const GOOGLE_PRIVATE_KEY      = process.env.GOOGLE_PRIVATE_KEY      || "";
+const GOOGLE_CALENDAR_ID      = process.env.GOOGLE_CALENDAR_ID      || "";
+
 const NOTIFICACOES = {
   whatsapp_responsavel: process.env.WHATSAPP_RESPONSAVEL || "PREENCHA_AQUI",
   email_responsavel:    process.env.EMAIL_RESPONSAVEL    || "PREENCHA_AQUI",
@@ -30,36 +36,65 @@ Tom: cordial, humanizado e direto. Sem emojis. Sem travessões. Ortografia perfe
 Use frases curtas. Nunca escreva parágrafos longos.
 Faça uma pergunta por vez. Nunca faça duas perguntas na mesma mensagem.
 
+ÁUDIOS:
+
+Você não consegue ouvir áudios. Se o cliente enviar um áudio, peça desculpas de forma gentil e humanizada e solicite que ele escreva a mensagem. Exemplo: "Desculpe, infelizmente não consigo ouvir áudios por aqui. Pode me escrever o que precisa? Fico à disposição."
+
 FLUXO DE ATENDIMENTO:
 
 1. Cumprimente e pergunte como pode ajudar.
-2. Identifique o tipo de cliente: pergunte se é cliente final ou revenda. Isso define o preço.
+2. Identifique o tipo de cliente: pergunte se é cliente final ou revenda.
 3. Entenda o produto que o cliente precisa.
-4. Colete as informações necessárias para calcular, uma por vez:
-   - Tipo de produto
-   - Medidas em metros quadrados (quando aplicável)
-   - Quantidade (quando aplicável)
-   - Acabamentos ou especificações (ex: com recorte, laminação, instalação)
-5. Com todas as informações, apresente a estimativa de forma clara e simples.
-6. Pergunte se o cliente tem interesse em prosseguir.
-7. Se sim, colete nome completo e e-mail para o time comercial entrar em contato.
-8. Agradeça e informe que em breve um consultor vai dar continuidade.
-Ao final, inclua EXATAMENTE esta linha na sua resposta:
+4. Colete as informações necessárias uma por vez: tipo de produto, medidas, quantidade, acabamentos.
+5. Peça a arte antes de calcular a estimativa. Diga que ela pode ser enviada aqui mesmo pelo WhatsApp.
+6. Após receber a arte ou confirmação de que ela será enviada, apresente a estimativa com o valor final. Nunca mencione o preço por metro quadrado. Nunca explique a fórmula de cálculo. Apresente apenas o valor total estimado.
+7. Pergunte se o cliente tem interesse em prosseguir.
+8. Se o produto exigir visita técnica (instalação, placas grandes, ACM ou acrílico), siga o fluxo de agendamento abaixo.
+9. Se não exigir visita, colete nome completo e e-mail para o time comercial entrar em contato.
+10. Agradeça e informe que em breve um consultor vai dar continuidade.
+Ao final, inclua EXATAMENTE esta linha:
 [LEAD_CAPTURADO] Nome: {nome} | Email: {email} | Produto: {produto} | Estimativa: {valor}
 
-REGRAS IMPORTANTES:
+FLUXO DE AGENDAMENTO DE VISITA TÉCNICA:
 
+Quando o produto for instalação, placa grande, ACM ou acrílico, após o cliente confirmar interesse:
+1. Informe que esse tipo de serviço requer uma visita técnica antes da produção.
+2. Colete o endereço completo do local.
+3. Pergunte o melhor período: manhã (9h às 12h) ou tarde (13h às 18h).
+4. Pergunte a data de preferência, informando que o agendamento deve ter no mínimo 24 horas de antecedência.
+5. Se o cliente sugerir uma data ou horário inválido, explique gentilmente e sugira uma alternativa dentro das regras.
+6. Informe que o time irá confirmar a disponibilidade em breve. Nunca confirme o agendamento diretamente.
+7. Colete nome completo e e-mail para confirmação.
+Ao final, inclua EXATAMENTE esta linha:
+[VISITA_SOLICITADA] Nome: {nome} | Email: {email} | Endereço: {endereco} | Período: {periodo} | Data preferida: {data} | Produto: {produto} | Estimativa: {valor}
+
+REGRAS DE AGENDAMENTO:
+
+- Atendimento de segunda a sexta, das 9h às 18h.
+- Mínimo de 24 horas de antecedência a partir do momento da conversa.
+- Nunca confirme o agendamento diretamente. Sempre diga que o time irá confirmar.
+- Se o horário sugerido estiver fora das regras, oriente o cliente gentilmente.
+
+REGRAS DE PREÇO:
+
+- Nunca mencione o preço por metro quadrado.
+- Nunca explique a fórmula de cálculo.
+- Apresente apenas o valor total estimado. Exemplo: "A estimativa para esse serviço é de R$ 360,00."
+- Sempre deixe claro que é uma estimativa e que o valor final é confirmado pelo time.
 - Nunca negocie preços. Se o cliente pedir desconto, diga: "Os valores são tabelados, mas o consultor pode verificar condições especiais para você."
 - Nunca informe prazos exatos. Diga: "O prazo é confirmado pelo time após a análise do pedido."
-- Nunca invente preços. Use apenas a tabela abaixo.
 - Se o produto não estiver na tabela, diga: "Esse item preciso verificar com o time. Posso já deixar seu contato para um consultor te retornar?"
-- Para produtos vendidos por m², pergunte as medidas e calcule: largura x altura x preço por m².
-- Sempre arredonde estimativas para cima e deixe claro que é uma estimativa, o valor final é confirmado pelo time.
 
-TABELA DE PREÇOS:
+ARGUMENTOS DE VENDA:
 
-IMPRESSÕES (valor por m²):
-Adesivo: R$ 70,00 (revenda) / R$ 90,00 (cliente final)
+Use apenas quando houver uma objeção real do cliente. Nunca use de forma aleatória ou em todo atendimento.
+- Se o cliente demonstrar preocupação com saúde ou segurança: "Os materiais que utilizamos usam tinta atóxica, sem risco para pessoas ou ambientes."
+- Se o cliente questionar durabilidade ou qualidade: "Nossos produtos têm garantia de até 5 anos."
+
+TABELA DE PREÇOS (uso interno — nunca revelar o valor por m²):
+
+IMPRESSÕES (por m²):
+Adesivo: R$ 70,00 revenda / R$ 90,00 cliente final
 Adesivo imp. + rec.: R$ 80,00 / R$ 100,00
 Adesivo promocional: R$ 65,00 / R$ 75,00
 Adesivo pro. imp. + rec.: R$ 75,00 / R$ 85,00
@@ -74,9 +109,9 @@ Laminação: R$ 30,00 / R$ 40,00
 Jateado: R$ 90,00 / R$ 120,00
 Preto fosco: R$ 70,00 / R$ 90,00
 Perfurado: R$ 120,00 / R$ 140,00
-Wind banner: indisponível para revenda / R$ 350,00 por unidade (cliente final)
-Instalação adesivo: R$ 30,00 (revenda e cliente final)
-Instalação lona ilhós: R$ 30,00 (revenda e cliente final)
+Wind banner: apenas cliente final / R$ 350,00 por unidade
+Instalação adesivo: R$ 30,00 por m²
+Instalação lona ilhós: R$ 30,00 por m²
 
 CARTÕES E FLYERS (por 1000 unidades, apenas cliente final):
 Cartão visita 4x4 simples: R$ 130,00
@@ -84,8 +119,8 @@ Cartão visita 4x4 laminação fosca + verniz localizado: R$ 230,00
 Flyer A5 4x4: R$ 336,00
 Flyer A6 4x4: R$ 226,00
 
-PLACAS (valor por m²):
-Placa 2mm + adesivo: R$ 170,00 (revenda) / R$ 220,00 (cliente final)
+PLACAS (por m²):
+Placa 2mm + adesivo: R$ 170,00 / R$ 220,00
 Placa 3mm + adesivo: R$ 230,00 / R$ 250,00
 Placa 3mm colmeia + adesivo: R$ 230,00 / R$ 250,00
 Placa 5mm + adesivo: R$ 320,00 / R$ 370,00
@@ -122,17 +157,20 @@ app.post("/webhook", async (req, res) => {
   try {
     const body = req.body;
 
-    // Ignora mensagens enviadas pelo próprio número (evita loop)
     if (body.fromMe) return;
+    if (body.isGroup) return;
+
+    // Responde áudios sem chamar o Claude
+    if (body.audio) {
+      await sendZAPIMessage(body.phone, "Desculpe, infelizmente não consigo ouvir áudios por aqui. Pode me escrever o que precisa? Fico à disposição.");
+      return;
+    }
 
     // Ignora se não for mensagem de texto
     if (!body.text?.message) return;
 
-    // Ignora mensagens de grupos
-    if (body.isGroup) return;
-
-    const userId = body.phone;        // número do cliente ex: "5511999999999"
-    const text   = body.text.message; // texto da mensagem
+    const userId = body.phone;
+    const text   = body.text.message;
 
     console.log("[" + userId + "] " + text);
     addToHistory(userId, "user", text);
@@ -162,6 +200,7 @@ app.post("/webhook", async (req, res) => {
 
     const replyLimpo = reply
       .replace(/\[LEAD_CAPTURADO\].*/g, "")
+      .replace(/\[VISITA_SOLICITADA\].*/g, "")
       .trim();
 
     console.log("[OLIVIA RESPONDE] " + replyLimpo);
@@ -195,11 +234,40 @@ async function verificarGatilhos(reply, userId) {
       "A Olivia coletou um novo lead:\n\n" + linha + "\n\nRetorne ao cliente para dar continuidade."
     );
   }
+
+  if (reply.includes("[VISITA_SOLICITADA]")) {
+    const linha = reply.match(/\[VISITA_SOLICITADA\](.*)/)?.[1]?.trim() || "";
+
+    if (GOOGLE_CALENDAR_ENABLED) {
+      await criarEventoCalendar(linha);
+    }
+
+    await notificarResponsavel(
+      "Nova visita técnica solicitada pela Olivia - Comunynk",
+      "A Olivia registrou uma solicitação de visita técnica:\n\n" + linha + "\n\nConfirme a disponibilidade com o cliente."
+    );
+  }
+}
+
+// ─── GOOGLE CALENDAR (ativar depois) ─────────────────────────────────────────
+async function criarEventoCalendar(dadosVisita) {
+  if (!GOOGLE_CALENDAR_ENABLED) return;
+
+  try {
+    // Implementação futura com googleapis
+    // Variáveis necessárias no Railway:
+    // GOOGLE_CALENDAR_ENABLED=true
+    // GOOGLE_CLIENT_EMAIL=sua-service-account@projeto.iam.gserviceaccount.com
+    // GOOGLE_PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\n...
+    // GOOGLE_CALENDAR_ID=id-do-calendario@group.calendar.google.com
+    console.log("[GOOGLE CALENDAR] Visita a agendar:", dadosVisita);
+  } catch (err) {
+    console.error("Erro Google Calendar:", err.message);
+  }
 }
 
 // ─── NOTIFICACAO RESPONSAVEL ─────────────────────────────────────────────────
 async function notificarResponsavel(assunto, corpo) {
-  // E-mail (opcional)
   const emailConfigurado =
     NOTIFICACOES.gmail_remetente !== "PREENCHA_AQUI" &&
     NOTIFICACOES.gmail_senha_app !== "PREENCHA_AQUI" &&
@@ -225,7 +293,6 @@ async function notificarResponsavel(assunto, corpo) {
     console.log("[NOTIFICACAO - EMAIL NAO CONFIGURADO] " + assunto + "\n" + corpo);
   }
 
-  // WhatsApp para o responsável (opcional)
   const whatsappConfigurado = NOTIFICACOES.whatsapp_responsavel !== "PREENCHA_AQUI";
 
   if (whatsappConfigurado) {
@@ -241,6 +308,11 @@ async function notificarResponsavel(assunto, corpo) {
 }
 
 // ─── HEALTH CHECK ─────────────────────────────────────────────────────────────
-app.get("/", (req, res) => res.json({ status: "ok", agent: AGENT_CONFIG.name, company: AGENT_CONFIG.company }));
+app.get("/", (req, res) => res.json({
+  status: "ok",
+  agent: AGENT_CONFIG.name,
+  company: AGENT_CONFIG.company,
+  calendar: GOOGLE_CALENDAR_ENABLED ? "ativo" : "pendente configuracao",
+}));
 
 app.listen(PORT, () => console.log("Agente " + AGENT_CONFIG.name + " da " + AGENT_CONFIG.company + " rodando na porta " + PORT));
