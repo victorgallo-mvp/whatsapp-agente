@@ -135,6 +135,7 @@ Responda sempre em português.`,
 };
 
 const conversations = {};
+const artes = {}; // armazena URL da última imagem enviada por usuário
 
 function getHistory(userId) {
   if (!conversations[userId]) conversations[userId] = [];
@@ -167,6 +168,7 @@ app.post("/webhook", async (req, res) => {
       const caption = body.image.caption ? " — legenda: " + body.image.caption : "";
       const mensagemImagem = "[o cliente enviou uma imagem" + caption + "]";
       addToHistory(body.phone, "user", mensagemImagem);
+      if (body.image.imageUrl) artes[body.phone] = body.image.imageUrl;
 
       const response = await axios.post(
         "https://api.anthropic.com/v1/messages",
@@ -264,10 +266,32 @@ async function sendZAPIMessage(phone, text) {
 async function verificarGatilhos(reply, userId) {
   if (reply.includes("[LEAD_CAPTURADO]")) {
     const linha = reply.match(/\[LEAD_CAPTURADO\](.*)/)?.[1]?.trim() || "";
-    await notificarResponsavel(
-      "Novo lead capturado pela Olivia - Comunynk",
-      "A Olivia coletou um novo lead:\n\n" + linha + "\n\nRetorne ao cliente para dar continuidade."
-    );
+    const corpo = "A Olivia coletou um novo lead:\n\n" + linha + "\n\nRetorne ao cliente para dar continuidade.";
+    await notificarResponsavel("Novo lead capturado pela Olivia - Comunynk", corpo);
+
+    // Encaminha a arte como imagem direta, se houver
+    const arteUrl = artes[userId];
+    if (arteUrl && NOTIFICACOES.whatsapp_responsavel !== "PREENCHA_AQUI") {
+      try {
+        await axios.post(
+          `https://api.z-api.io/instances/${ZAPI_INSTANCE_ID}/token/${ZAPI_TOKEN}/send-image`,
+          {
+            phone:   NOTIFICACOES.whatsapp_responsavel,
+            image:   arteUrl,
+            caption: "Arte do cliente: " + (linha.match(/Nome: ([^|]+)/)?.[1]?.trim() || ""),
+          },
+          {
+            headers: {
+              "Client-Token": ZAPI_CLIENT_TOKEN,
+              "Content-Type": "application/json",
+            },
+          }
+        );
+        console.log("Arte encaminhada para o responsavel.");
+      } catch (err) {
+        console.error("Erro ao encaminhar arte:", err.response?.data || err.message);
+      }
+    }
   }
 
   if (reply.includes("[VISITA_SOLICITADA]")) {
