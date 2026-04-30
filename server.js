@@ -40,6 +40,10 @@ Faça uma pergunta por vez. Nunca faça duas perguntas na mesma mensagem.
 
 Você não consegue ouvir áudios. Se o cliente enviar um áudio, peça desculpas de forma gentil e humanizada e solicite que ele escreva a mensagem. Exemplo: "Desculpe, infelizmente não consigo ouvir áudios por aqui. Pode me escrever o que precisa? Fico à disposição."
 
+IMAGENS:
+
+Quando você receber a mensagem [o cliente enviou uma imagem], significa que o cliente enviou uma imagem pelo WhatsApp. Você não consegue ver o conteúdo da imagem, mas deve tratá-la como o recebimento da arte. Confirme o recebimento de forma natural e siga para a estimativa. Exemplo: "Recebi a arte, obrigada. Deixa eu calcular a estimativa para você."
+
 FLUXO DE ATENDIMENTO:
 
 1. Cumprimente e pergunte como pode ajudar.
@@ -155,6 +159,45 @@ app.post("/webhook", async (req, res) => {
     // Responde áudios sem chamar o Claude
     if (body.audio) {
       await sendZAPIMessage(body.phone, "Desculpe, infelizmente não consigo ouvir áudios por aqui. Pode me escrever o que precisa? Fico à disposição.");
+      return;
+    }
+
+    // Detecta imagem e injeta como mensagem de texto no histórico
+    if (body.image) {
+      const caption = body.image.caption ? " — legenda: " + body.image.caption : "";
+      const mensagemImagem = "[o cliente enviou uma imagem" + caption + "]";
+      addToHistory(body.phone, "user", mensagemImagem);
+
+      const response = await axios.post(
+        "https://api.anthropic.com/v1/messages",
+        {
+          model:      "claude-sonnet-4-20250514",
+          max_tokens: 1000,
+          system:     AGENT_CONFIG.instructions,
+          messages:   getHistory(body.phone),
+        },
+        {
+          headers: {
+            "x-api-key":         ANTHROPIC_API_KEY,
+            "anthropic-version": "2023-06-01",
+            "Content-Type":      "application/json",
+          },
+        }
+      );
+
+      let reply = response.data.content?.[0]?.text;
+      if (!reply) return;
+
+      addToHistory(body.phone, "assistant", reply);
+      await verificarGatilhos(reply, body.phone);
+
+      const replyLimpo = reply
+        .replace(/\[LEAD_CAPTURADO\].*/g, "")
+        .replace(/\[VISITA_SOLICITADA\].*/g, "")
+        .trim();
+
+      console.log("[OLIVIA RESPONDE - IMAGEM] " + replyLimpo);
+      await sendZAPIMessage(body.phone, replyLimpo);
       return;
     }
 
