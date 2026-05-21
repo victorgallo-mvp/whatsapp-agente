@@ -431,7 +431,9 @@ app.get("/auth", (req, res) => {
     prompt: "consent",
     scope: ["https://www.googleapis.com/auth/calendar"],
   });
-  res.redirect(url);
+  console.log("[AUTH] URL gerada:", url);
+  console.log("[AUTH] GOOGLE_REDIRECT_URI:", GOOGLE_REDIRECT_URI);
+  res.send("URL gerada: <a href='" + url + "'>" + url + "</a><br><br>REDIRECT_URI configurada: " + GOOGLE_REDIRECT_URI);
 });
 
 app.get("/oauth2callback", async (req, res) => {
