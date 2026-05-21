@@ -310,20 +310,52 @@ async function verificarGatilhos(reply, userId) {
   }
 }
 
-// ─── GOOGLE CALENDAR (ativar depois) ─────────────────────────────────────────
+// ─── GOOGLE CALENDAR ──────────────────────────────────────────────────────────
 async function criarEventoCalendar(dadosVisita) {
   if (!GOOGLE_CALENDAR_ENABLED) return;
+  if (!GOOGLE_REFRESH_TOKEN) {
+    console.error("[GOOGLE CALENDAR] GOOGLE_REFRESH_TOKEN nao definido.");
+    return;
+  }
 
   try {
-    // Implementação futura com googleapis
-    // Variáveis necessárias no Railway:
-    // GOOGLE_CALENDAR_ENABLED=true
-    // GOOGLE_CLIENT_EMAIL=sua-service-account@projeto.iam.gserviceaccount.com
-    // GOOGLE_PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\n...
-    // GOOGLE_CALENDAR_ID=id-do-calendario@group.calendar.google.com
-    console.log("[GOOGLE CALENDAR] Visita a agendar:", dadosVisita);
+    const tokenRes = await axios.post(
+      "https://oauth2.googleapis.com/token",
+      new URLSearchParams({
+        client_id:     GOOGLE_CLIENT_ID,
+        client_secret: GOOGLE_CLIENT_SECRET,
+        refresh_token: GOOGLE_REFRESH_TOKEN,
+        grant_type:    "refresh_token",
+      }).toString(),
+      { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
+    );
+
+    const accessToken = tokenRes.data.access_token;
+
+    const nome     = dadosVisita.match(/Nome: ([^|]+)/)?.[1]?.trim()     || "Cliente";
+    const endereco = dadosVisita.match(/Endereço: ([^|]+)/)?.[1]?.trim() || "";
+    const produto  = dadosVisita.match(/Produto: ([^|]+)/)?.[1]?.trim()  || "";
+
+    const inicio = new Date();
+    inicio.setDate(inicio.getDate() + 1);
+    inicio.setHours(9, 0, 0, 0);
+    const fim = new Date(inicio.getTime() + 60 * 60 * 1000);
+
+    await axios.post(
+      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(GOOGLE_CALENDAR_ID || "primary")}/events`,
+      {
+        summary:     "Visita Técnica - " + nome,
+        description: "Produto: " + produto + "\nDados: " + dadosVisita,
+        location:    endereco,
+        start: { dateTime: inicio.toISOString(), timeZone: "America/Sao_Paulo" },
+        end:   { dateTime: fim.toISOString(),    timeZone: "America/Sao_Paulo" },
+      },
+      { headers: { Authorization: "Bearer " + accessToken, "Content-Type": "application/json" } }
+    );
+
+    console.log("[GOOGLE CALENDAR] Evento criado para " + nome);
   } catch (err) {
-    console.error("Erro Google Calendar:", err.message);
+    console.error("Erro Google Calendar:", err.response?.data || err.message);
   }
 }
 
