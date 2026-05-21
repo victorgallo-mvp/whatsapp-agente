@@ -433,7 +433,7 @@ app.get("/auth", (req, res) => {
   res.redirect(url);
 });
 
-app.get("/auth/callback", async (req, res) => {
+app.get("/oauth2callback", async (req, res) => {
   const { code, error } = req.query;
   if (error) return res.status(400).send("Acesso negado: " + error);
   if (!code)  return res.status(400).send("Código de autorização não recebido.");
