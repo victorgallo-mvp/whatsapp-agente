@@ -370,6 +370,16 @@ async function notificarResponsavel(assunto, corpo) {
 
 // ─── OAUTH GOOGLE (gerar refresh token uma única vez) ────────────────────────
 app.get("/auth", (req, res) => {
+  if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !GOOGLE_REDIRECT_URI) {
+    return res.send(
+      "<h3>Variaveis ausentes no Railway:</h3>" +
+      "<pre>" +
+      "GOOGLE_CLIENT_ID: " + (GOOGLE_CLIENT_ID || "NAO DEFINIDO") + "\n" +
+      "GOOGLE_CLIENT_SECRET: " + (GOOGLE_CLIENT_SECRET ? "OK" : "NAO DEFINIDO") + "\n" +
+      "GOOGLE_REDIRECT_URI: " + (GOOGLE_REDIRECT_URI || "NAO DEFINIDO") +
+      "</pre>"
+    );
+  }
   const url = "https://accounts.google.com/o/oauth2/auth?" +
     "client_id=" + GOOGLE_CLIENT_ID +
     "&redirect_uri=" + encodeURIComponent(GOOGLE_REDIRECT_URI) +
@@ -377,12 +387,14 @@ app.get("/auth", (req, res) => {
     "&scope=" + encodeURIComponent("https://www.googleapis.com/auth/calendar") +
     "&access_type=offline" +
     "&prompt=consent";
+  console.log("[AUTH] Redirecionando para:", url);
   res.redirect(url);
 });
 
 app.get("/oauth2callback", async (req, res) => {
+  console.log("[CALLBACK] url:", req.url, "| query:", JSON.stringify(req.query));
   const code = req.query.code;
-  if (!code) return res.send("Codigo nao recebido.");
+  if (!code) return res.send("Codigo nao recebido. URL completa: " + req.url);
 
   try {
     const tokenRes = await axios.post(
