@@ -298,6 +298,8 @@ async function verificarGatilhos(reply, userId) {
 
   if (reply.includes("[VISITA_SOLICITADA]")) {
     const linha = reply.match(/\[VISITA_SOLICITADA\](.*)/)?.[1]?.trim() || "";
+    console.log("[VISITA_SOLICITADA] detectado:", linha);
+    console.log("[GOOGLE CALENDAR] ENABLED:", GOOGLE_CALENDAR_ENABLED, "| REFRESH_TOKEN:", GOOGLE_REFRESH_TOKEN ? "OK" : "AUSENTE");
 
     if (GOOGLE_CALENDAR_ENABLED) {
       await criarEventoCalendar(linha);
