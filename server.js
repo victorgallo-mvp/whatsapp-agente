@@ -340,20 +340,41 @@ async function criarEventoCalendar(dadosVisita) {
     const data     = dadosVisita.match(/Data: ([^|]+)/)?.[1]?.trim()     || "";
     const horario  = dadosVisita.match(/Horario: ([^|]+)/)?.[1]?.trim()  || "09:00";
 
-    // Tenta usar a data informada pelo cliente, fallback para amanhã 9h
+    console.log("[GOOGLE CALENDAR] data extraida:", data, "| horario extraido:", horario);
+
+    // Parsing da data: aceita "27/05", "27/05/2026", "27-05-2026", "dia 27"
+    const hoje = new Date();
     let inicio = new Date();
-    if (data) {
-      const partes = data.match(/(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?/);
-      if (partes) {
-        const ano = partes[3] ? parseInt(partes[3]) : inicio.getFullYear();
-        inicio = new Date(ano, parseInt(partes[2]) - 1, parseInt(partes[1]));
+    const matchData = data.match(/(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?/) ||
+                      data.match(/dia\s*(\d{1,2})/);
+    if (matchData) {
+      let dia, mes, ano;
+      if (matchData[0].includes("/") || matchData[0].includes("-")) {
+        dia = parseInt(matchData[1]);
+        mes = parseInt(matchData[2]) - 1;
+        ano = matchData[3] ? parseInt(matchData[3] < 100 ? "20" + matchData[3] : matchData[3]) : hoje.getFullYear();
+      } else {
+        // formato "dia 27" — usa mês atual, avança para próximo mês se já passou
+        dia = parseInt(matchData[1]);
+        mes = hoje.getMonth();
+        ano = hoje.getFullYear();
+        if (dia <= hoje.getDate()) mes += 1;
       }
+      inicio = new Date(ano, mes, dia);
     } else {
       inicio.setDate(inicio.getDate() + 1);
     }
-    const [hora, min] = horario.match(/(\d{1,2})[h:](\d{2})?/)
-      ? [parseInt(horario), parseInt(horario.split(/[h:]/)[1] || "0")]
-      : [9, 0];
+
+    // Parsing do horário: aceita "14h", "14:00", "14h00", "14h30", "9"
+    let hora = 9, min = 0;
+    const matchHora = horario.match(/(\d{1,2})[h:](\d{2})?/);
+    if (matchHora) {
+      hora = parseInt(matchHora[1]);
+      min  = parseInt(matchHora[2] || "0");
+    } else {
+      const soNum = horario.match(/^\d{1,2}$/);
+      if (soNum) hora = parseInt(soNum[0]);
+    }
     inicio.setHours(hora, min, 0, 0);
     const fim = new Date(inicio.getTime() + 60 * 60 * 1000);
 
