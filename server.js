@@ -7,6 +7,7 @@ const path       = require("path");
 const { google } = require("googleapis");
 
 const app = express();
+app.set("trust proxy", 1);
 app.use(express.json());
 
 const ANTHROPIC_API_KEY  = process.env.ANTHROPIC_API_KEY;
@@ -434,10 +435,11 @@ app.get("/auth", (req, res) => {
 });
 
 app.get("/oauth2callback", async (req, res) => {
+  console.log("[OAUTH CALLBACK] url completa:", req.originalUrl);
   console.log("[OAUTH CALLBACK] query params:", JSON.stringify(req.query));
   const { code, error } = req.query;
   if (error) return res.status(400).send("Acesso negado: " + error);
-  if (!code)  return res.status(400).send("Código não recebido. Params recebidos: " + JSON.stringify(req.query));
+  if (!code)  return res.status(200).send("URL recebida: " + req.originalUrl + "<br>Params: " + JSON.stringify(req.query));
 
   try {
     const oauth2Client = criarOAuth2Client();
