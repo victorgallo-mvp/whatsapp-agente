@@ -434,9 +434,10 @@ app.get("/auth", (req, res) => {
 });
 
 app.get("/oauth2callback", async (req, res) => {
+  console.log("[OAUTH CALLBACK] query params:", JSON.stringify(req.query));
   const { code, error } = req.query;
   if (error) return res.status(400).send("Acesso negado: " + error);
-  if (!code)  return res.status(400).send("Código de autorização não recebido.");
+  if (!code)  return res.status(400).send("Código não recebido. Params recebidos: " + JSON.stringify(req.query));
 
   try {
     const oauth2Client = criarOAuth2Client();
