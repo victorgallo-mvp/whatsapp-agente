@@ -2,12 +2,8 @@ require("dotenv").config();
 const express    = require("express");
 const axios      = require("axios");
 const nodemailer = require("nodemailer");
-const fs         = require("fs");
-const path       = require("path");
-const { google } = require("googleapis");
 
 const app = express();
-app.set("trust proxy", 1);
 app.use(express.json());
 
 const ANTHROPIC_API_KEY  = process.env.ANTHROPIC_API_KEY;
@@ -16,30 +12,13 @@ const ZAPI_TOKEN         = process.env.ZAPI_TOKEN;
 const ZAPI_CLIENT_TOKEN  = process.env.ZAPI_CLIENT_TOKEN;
 const PORT               = process.env.PORT || 3000;
 
+// Google Calendar (configurar depois)
 const GOOGLE_CALENDAR_ENABLED = process.env.GOOGLE_CALENDAR_ENABLED === "true";
 const GOOGLE_CLIENT_ID        = process.env.GOOGLE_CLIENT_ID        || "";
 const GOOGLE_CLIENT_SECRET    = process.env.GOOGLE_CLIENT_SECRET    || "";
+const GOOGLE_CALENDAR_ID      = process.env.GOOGLE_CALENDAR_ID      || "";
 const GOOGLE_REDIRECT_URI     = process.env.GOOGLE_REDIRECT_URI     || "";
-const GOOGLE_CALENDAR_ID      = process.env.GOOGLE_CALENDAR_ID      || "primary";
-
-const TOKENS_FILE = path.join(__dirname, ".google_tokens.json");
-
-function criarOAuth2Client() {
-  return new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI);
-}
-
-function carregarTokens() {
-  try {
-    if (fs.existsSync(TOKENS_FILE)) {
-      return JSON.parse(fs.readFileSync(TOKENS_FILE, "utf8"));
-    }
-  } catch (_) {}
-  return null;
-}
-
-function salvarTokens(tokens) {
-  fs.writeFileSync(TOKENS_FILE, JSON.stringify(tokens), "utf8");
-}
+const GOOGLE_REFRESH_TOKEN    = process.env.GOOGLE_REFRESH_TOKEN    || "";
 
 const NOTIFICACOES = {
   whatsapp_responsavel: process.env.WHATSAPP_RESPONSAVEL || "PREENCHA_AQUI",
@@ -77,22 +56,22 @@ FLUXO DE ATENDIMENTO:
 6. Após receber a arte ou confirmação de que ela será enviada, apresente a estimativa com o valor final. Nunca mencione o preço por metro quadrado. Nunca explique a fórmula de cálculo. Apresente apenas o valor total estimado.
 7. Pergunte se o cliente tem interesse em prosseguir.
 8. Se o produto exigir visita técnica (instalação, placas grandes, ACM ou acrílico), siga o fluxo de agendamento abaixo.
-9. Se não exigir visita, colete nome completo e e-mail para o time comercial entrar em contato.
+9. Se não exigir visita, colete as seguintes informações uma por vez: nome completo, nome da empresa ou estabelecimento, telefone e e-mail.
 10. Agradeça e informe que em breve um consultor vai dar continuidade.
 Ao final, inclua EXATAMENTE esta linha:
-[LEAD_CAPTURADO] Nome: {nome} | Email: {email} | Produto: {produto} | Estimativa: {valor}
+[LEAD_CAPTURADO] Nome: {nome} | Empresa: {empresa} | Telefone: {telefone} | Email: {email} | Produto: {produto} | Estimativa: {valor}
 
 FLUXO DE AGENDAMENTO DE VISITA TÉCNICA:
 
 Quando o produto for instalação, placa grande, ACM ou acrílico, após o cliente confirmar interesse:
 1. Informe que esse tipo de serviço requer uma visita técnica antes da produção.
 2. Colete o endereço completo do local.
-3. Colete nome completo e e-mail para confirmação.
+3. Colete as seguintes informações uma por vez: nome completo, nome da empresa ou estabelecimento, telefone e e-mail.
 4. Envie o link do Calendly para o cliente escolher o melhor horário: https://calendly.com/victor-gallo-loreleibd/30min
 5. Informe que o atendimento é de segunda a sexta, das 9h às 18h, e que o agendamento deve ter no mínimo 24 horas de antecedência.
 6. Agradeça e diga que o time estará aguardando na visita.
 Ao final, inclua EXATAMENTE esta linha:
-[VISITA_SOLICITADA] Nome: {nome} | Email: {email} | Endereço: {endereco} | Produto: {produto} | Estimativa: {valor}
+[VISITA_SOLICITADA] Nome: {nome} | Empresa: {empresa} | Telefone: {telefone} | Email: {email} | Endereço: {endereco} | Produto: {produto} | Estimativa: {valor}
 
 REGRAS DE PREÇO:
 
@@ -331,49 +310,18 @@ async function verificarGatilhos(reply, userId) {
   }
 }
 
-// ─── GOOGLE CALENDAR ──────────────────────────────────────────────────────────
+// ─── GOOGLE CALENDAR (ativar depois) ─────────────────────────────────────────
 async function criarEventoCalendar(dadosVisita) {
   if (!GOOGLE_CALENDAR_ENABLED) return;
 
-  const tokens = carregarTokens();
-  if (!tokens) {
-    console.error("[GOOGLE CALENDAR] Tokens não encontrados. Acesse /auth para autenticar.");
-    return;
-  }
-
   try {
-    const oauth2Client = criarOAuth2Client();
-    oauth2Client.setCredentials(tokens);
-
-    // Salva tokens atualizados caso sejam renovados automaticamente
-    oauth2Client.on("tokens", (novos) => {
-      const atualizados = { ...carregarTokens(), ...novos };
-      salvarTokens(atualizados);
-    });
-
-    const calendar = google.calendar({ version: "v3", auth: oauth2Client });
-
-    const nome     = dadosVisita.match(/Nome: ([^|]+)/)?.[1]?.trim()      || "Cliente";
-    const endereco = dadosVisita.match(/Endereço: ([^|]+)/)?.[1]?.trim()  || "";
-    const produto  = dadosVisita.match(/Produto: ([^|]+)/)?.[1]?.trim()   || "";
-
-    const agora   = new Date();
-    const inicio  = new Date(agora.getTime() + 24 * 60 * 60 * 1000); // +1 dia como placeholder
-    inicio.setHours(9, 0, 0, 0);
-    const fim = new Date(inicio.getTime() + 60 * 60 * 1000); // 1h de duração
-
-    await calendar.events.insert({
-      calendarId: GOOGLE_CALENDAR_ID,
-      resource: {
-        summary:     "Visita Técnica - " + nome,
-        description: "Produto: " + produto + "\nDados: " + dadosVisita,
-        location:    endereco,
-        start: { dateTime: inicio.toISOString(), timeZone: "America/Sao_Paulo" },
-        end:   { dateTime: fim.toISOString(),    timeZone: "America/Sao_Paulo" },
-      },
-    });
-
-    console.log("[GOOGLE CALENDAR] Evento criado para " + nome);
+    // Implementação futura com googleapis
+    // Variáveis necessárias no Railway:
+    // GOOGLE_CALENDAR_ENABLED=true
+    // GOOGLE_CLIENT_EMAIL=sua-service-account@projeto.iam.gserviceaccount.com
+    // GOOGLE_PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\n...
+    // GOOGLE_CALENDAR_ID=id-do-calendario@group.calendar.google.com
+    console.log("[GOOGLE CALENDAR] Visita a agendar:", dadosVisita);
   } catch (err) {
     console.error("Erro Google Calendar:", err.message);
   }
@@ -420,37 +368,41 @@ async function notificarResponsavel(assunto, corpo) {
   }
 }
 
-// ─── GOOGLE OAUTH ROUTES ──────────────────────────────────────────────────────
+// ─── OAUTH GOOGLE (gerar refresh token uma única vez) ────────────────────────
 app.get("/auth", (req, res) => {
-  if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !GOOGLE_REDIRECT_URI) {
-    return res.status(500).send("Configure GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET e GOOGLE_REDIRECT_URI no Railway.");
-  }
-  const oauth2Client = criarOAuth2Client();
-  const url = oauth2Client.generateAuthUrl({
-    access_type: "offline",
-    prompt: "consent",
-    scope: ["https://www.googleapis.com/auth/calendar"],
-  });
-  console.log("[AUTH] URL gerada:", url);
-  console.log("[AUTH] GOOGLE_REDIRECT_URI:", GOOGLE_REDIRECT_URI);
-  res.send("URL gerada: <a href='" + url + "'>" + url + "</a><br><br>REDIRECT_URI configurada: " + GOOGLE_REDIRECT_URI);
+  const url = "https://accounts.google.com/o/oauth2/auth?" +
+    "client_id=" + GOOGLE_CLIENT_ID +
+    "&redirect_uri=" + encodeURIComponent(GOOGLE_REDIRECT_URI) +
+    "&response_type=code" +
+    "&scope=" + encodeURIComponent("https://www.googleapis.com/auth/calendar") +
+    "&access_type=offline" +
+    "&prompt=consent";
+  res.redirect(url);
 });
 
 app.get("/oauth2callback", async (req, res) => {
-  console.log("[OAUTH CALLBACK] url completa:", req.originalUrl);
-  console.log("[OAUTH CALLBACK] query params:", JSON.stringify(req.query));
-  const { code, error } = req.query;
-  if (error) return res.status(400).send("Acesso negado: " + error);
-  if (!code)  return res.status(200).send("URL recebida: " + req.originalUrl + "<br>Params: " + JSON.stringify(req.query));
+  const code = req.query.code;
+  if (!code) return res.send("Codigo nao recebido.");
 
   try {
-    const oauth2Client = criarOAuth2Client();
-    const { tokens } = await oauth2Client.getToken(code);
-    salvarTokens(tokens);
-    res.send("Autenticação concluída com sucesso. Google Calendar está pronto para uso.");
+    const tokenRes = await axios.post(
+      "https://oauth2.googleapis.com/token",
+      new URLSearchParams({
+        code,
+        client_id:     GOOGLE_CLIENT_ID,
+        client_secret: GOOGLE_CLIENT_SECRET,
+        redirect_uri:  GOOGLE_REDIRECT_URI,
+        grant_type:    "authorization_code",
+      }).toString(),
+      { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
+    );
+
+    const refreshToken = tokenRes.data.refresh_token;
+    console.log("REFRESH TOKEN GERADO:", refreshToken);
+    res.send("<h2>Refresh Token gerado</h2><p>Copie o valor abaixo e adicione no Railway como GOOGLE_REFRESH_TOKEN:</p><pre>" + refreshToken + "</pre>");
   } catch (err) {
-    console.error("Erro ao obter tokens:", err.message);
-    res.status(500).send("Erro ao autenticar: " + err.message);
+    console.error("Erro OAuth:", err.response?.data || err.message);
+    res.send("Erro ao gerar token. Veja os logs do Railway.");
   }
 });
 
