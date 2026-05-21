@@ -2,6 +2,9 @@ require("dotenv").config();
 const express    = require("express");
 const axios      = require("axios");
 const nodemailer = require("nodemailer");
+const fs         = require("fs");
+const path       = require("path");
+const { google } = require("googleapis");
 
 const app = express();
 app.use(express.json());
@@ -12,11 +15,30 @@ const ZAPI_TOKEN         = process.env.ZAPI_TOKEN;
 const ZAPI_CLIENT_TOKEN  = process.env.ZAPI_CLIENT_TOKEN;
 const PORT               = process.env.PORT || 3000;
 
-// Google Calendar (configurar depois)
 const GOOGLE_CALENDAR_ENABLED = process.env.GOOGLE_CALENDAR_ENABLED === "true";
-const GOOGLE_CLIENT_EMAIL     = process.env.GOOGLE_CLIENT_EMAIL     || "";
-const GOOGLE_PRIVATE_KEY      = process.env.GOOGLE_PRIVATE_KEY      || "";
-const GOOGLE_CALENDAR_ID      = process.env.GOOGLE_CALENDAR_ID      || "";
+const GOOGLE_CLIENT_ID        = process.env.GOOGLE_CLIENT_ID        || "";
+const GOOGLE_CLIENT_SECRET    = process.env.GOOGLE_CLIENT_SECRET    || "";
+const GOOGLE_REDIRECT_URI     = process.env.GOOGLE_REDIRECT_URI     || "";
+const GOOGLE_CALENDAR_ID      = process.env.GOOGLE_CALENDAR_ID      || "primary";
+
+const TOKENS_FILE = path.join(__dirname, ".google_tokens.json");
+
+function criarOAuth2Client() {
+  return new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI);
+}
+
+function carregarTokens() {
+  try {
+    if (fs.existsSync(TOKENS_FILE)) {
+      return JSON.parse(fs.readFileSync(TOKENS_FILE, "utf8"));
+    }
+  } catch (_) {}
+  return null;
+}
+
+function salvarTokens(tokens) {
+  fs.writeFileSync(TOKENS_FILE, JSON.stringify(tokens), "utf8");
+}
 
 const NOTIFICACOES = {
   whatsapp_responsavel: process.env.WHATSAPP_RESPONSAVEL || "PREENCHA_AQUI",
@@ -308,18 +330,49 @@ async function verificarGatilhos(reply, userId) {
   }
 }
 
-// ─── GOOGLE CALENDAR (ativar depois) ─────────────────────────────────────────
+// ─── GOOGLE CALENDAR ──────────────────────────────────────────────────────────
 async function criarEventoCalendar(dadosVisita) {
   if (!GOOGLE_CALENDAR_ENABLED) return;
 
+  const tokens = carregarTokens();
+  if (!tokens) {
+    console.error("[GOOGLE CALENDAR] Tokens não encontrados. Acesse /auth para autenticar.");
+    return;
+  }
+
   try {
-    // Implementação futura com googleapis
-    // Variáveis necessárias no Railway:
-    // GOOGLE_CALENDAR_ENABLED=true
-    // GOOGLE_CLIENT_EMAIL=sua-service-account@projeto.iam.gserviceaccount.com
-    // GOOGLE_PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\n...
-    // GOOGLE_CALENDAR_ID=id-do-calendario@group.calendar.google.com
-    console.log("[GOOGLE CALENDAR] Visita a agendar:", dadosVisita);
+    const oauth2Client = criarOAuth2Client();
+    oauth2Client.setCredentials(tokens);
+
+    // Salva tokens atualizados caso sejam renovados automaticamente
+    oauth2Client.on("tokens", (novos) => {
+      const atualizados = { ...carregarTokens(), ...novos };
+      salvarTokens(atualizados);
+    });
+
+    const calendar = google.calendar({ version: "v3", auth: oauth2Client });
+
+    const nome     = dadosVisita.match(/Nome: ([^|]+)/)?.[1]?.trim()      || "Cliente";
+    const endereco = dadosVisita.match(/Endereço: ([^|]+)/)?.[1]?.trim()  || "";
+    const produto  = dadosVisita.match(/Produto: ([^|]+)/)?.[1]?.trim()   || "";
+
+    const agora   = new Date();
+    const inicio  = new Date(agora.getTime() + 24 * 60 * 60 * 1000); // +1 dia como placeholder
+    inicio.setHours(9, 0, 0, 0);
+    const fim = new Date(inicio.getTime() + 60 * 60 * 1000); // 1h de duração
+
+    await calendar.events.insert({
+      calendarId: GOOGLE_CALENDAR_ID,
+      resource: {
+        summary:     "Visita Técnica - " + nome,
+        description: "Produto: " + produto + "\nDados: " + dadosVisita,
+        location:    endereco,
+        start: { dateTime: inicio.toISOString(), timeZone: "America/Sao_Paulo" },
+        end:   { dateTime: fim.toISOString(),    timeZone: "America/Sao_Paulo" },
+      },
+    });
+
+    console.log("[GOOGLE CALENDAR] Evento criado para " + nome);
   } catch (err) {
     console.error("Erro Google Calendar:", err.message);
   }
@@ -365,6 +418,36 @@ async function notificarResponsavel(assunto, corpo) {
     console.log("[NOTIFICACAO - WHATSAPP NAO CONFIGURADO] " + assunto);
   }
 }
+
+// ─── GOOGLE OAUTH ROUTES ──────────────────────────────────────────────────────
+app.get("/auth", (req, res) => {
+  if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !GOOGLE_REDIRECT_URI) {
+    return res.status(500).send("Configure GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET e GOOGLE_REDIRECT_URI no Railway.");
+  }
+  const oauth2Client = criarOAuth2Client();
+  const url = oauth2Client.generateAuthUrl({
+    access_type: "offline",
+    prompt: "consent",
+    scope: ["https://www.googleapis.com/auth/calendar"],
+  });
+  res.redirect(url);
+});
+
+app.get("/auth/callback", async (req, res) => {
+  const { code, error } = req.query;
+  if (error) return res.status(400).send("Acesso negado: " + error);
+  if (!code)  return res.status(400).send("Código de autorização não recebido.");
+
+  try {
+    const oauth2Client = criarOAuth2Client();
+    const { tokens } = await oauth2Client.getToken(code);
+    salvarTokens(tokens);
+    res.send("Autenticação concluída com sucesso. Google Calendar está pronto para uso.");
+  } catch (err) {
+    console.error("Erro ao obter tokens:", err.message);
+    res.status(500).send("Erro ao autenticar: " + err.message);
+  }
+});
 
 // ─── HEALTH CHECK ─────────────────────────────────────────────────────────────
 app.get("/", (req, res) => res.json({
