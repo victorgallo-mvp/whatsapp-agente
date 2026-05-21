@@ -67,11 +67,11 @@ Quando o produto for instalação, placa grande, ACM ou acrílico, após o clien
 1. Informe que esse tipo de serviço requer uma visita técnica antes da produção.
 2. Colete o endereço completo do local.
 3. Colete as seguintes informações uma por vez: nome completo, nome da empresa ou estabelecimento, telefone e e-mail.
-4. Envie o link do Calendly para o cliente escolher o melhor horário: https://calendly.com/victor-gallo-loreleibd/30min
-5. Informe que o atendimento é de segunda a sexta, das 9h às 18h, e que o agendamento deve ter no mínimo 24 horas de antecedência.
-6. Agradeça e diga que o time estará aguardando na visita.
+4. Pergunte qual a data e horário de preferência para a visita. Informe que o atendimento é de segunda a sexta, das 9h às 18h, e que o agendamento deve ter no mínimo 24 horas de antecedência.
+5. Confirme a data e horário escolhidos pelo cliente.
+6. Agradeça e diga que o agendamento foi registrado e o time estará aguardando na visita.
 Ao final, inclua EXATAMENTE esta linha:
-[VISITA_SOLICITADA] Nome: {nome} | Empresa: {empresa} | Telefone: {telefone} | Email: {email} | Endereço: {endereco} | Produto: {produto} | Estimativa: {valor}
+[VISITA_SOLICITADA] Nome: {nome} | Empresa: {empresa} | Telefone: {telefone} | Email: {email} | Endereço: {endereco} | Produto: {produto} | Estimativa: {valor} | Data: {data} | Horario: {horario}
 
 REGRAS DE PREÇO:
 
@@ -335,10 +335,24 @@ async function criarEventoCalendar(dadosVisita) {
     const nome     = dadosVisita.match(/Nome: ([^|]+)/)?.[1]?.trim()     || "Cliente";
     const endereco = dadosVisita.match(/Endereço: ([^|]+)/)?.[1]?.trim() || "";
     const produto  = dadosVisita.match(/Produto: ([^|]+)/)?.[1]?.trim()  || "";
+    const data     = dadosVisita.match(/Data: ([^|]+)/)?.[1]?.trim()     || "";
+    const horario  = dadosVisita.match(/Horario: ([^|]+)/)?.[1]?.trim()  || "09:00";
 
-    const inicio = new Date();
-    inicio.setDate(inicio.getDate() + 1);
-    inicio.setHours(9, 0, 0, 0);
+    // Tenta usar a data informada pelo cliente, fallback para amanhã 9h
+    let inicio = new Date();
+    if (data) {
+      const partes = data.match(/(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?/);
+      if (partes) {
+        const ano = partes[3] ? parseInt(partes[3]) : inicio.getFullYear();
+        inicio = new Date(ano, parseInt(partes[2]) - 1, parseInt(partes[1]));
+      }
+    } else {
+      inicio.setDate(inicio.getDate() + 1);
+    }
+    const [hora, min] = horario.match(/(\d{1,2})[h:](\d{2})?/)
+      ? [parseInt(horario), parseInt(horario.split(/[h:]/)[1] || "0")]
+      : [9, 0];
+    inicio.setHours(hora, min, 0, 0);
     const fim = new Date(inicio.getTime() + 60 * 60 * 1000);
 
     await axios.post(
