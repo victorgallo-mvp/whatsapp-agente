@@ -85,6 +85,7 @@ Ao final, inclua EXATAMENTE esta linha:
 
 REGRAS DE PREÇO:
 
+- Sempre utilize os preços de cliente final. Somente aplique os preços de revenda se o próprio cliente mencionar que é revendedor.
 - Nunca mencione o preço por metro quadrado.
 - Nunca explique a fórmula de cálculo.
 - Apresente apenas o valor total estimado. Exemplo: "A estimativa para esse serviço é de R$ 360,00."
