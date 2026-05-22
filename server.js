@@ -2,6 +2,7 @@ require("dotenv").config();
 const express    = require("express");
 const axios      = require("axios");
 const nodemailer = require("nodemailer");
+const { Pool }   = require("pg");
 
 const app = express();
 app.use(express.json());
@@ -148,18 +149,38 @@ Acrílico 10mm CNC + adesivo: R$ 1.100,00 / R$ 1.150,00
 Responda sempre em português.`,
 };
 
-const conversations = {};
-const artes = {}; // armazena URL da última imagem enviada por usuário
+const artes = {};
 
-function getHistory(userId) {
-  if (!conversations[userId]) conversations[userId] = [];
-  return conversations[userId];
+// ─── POSTGRES ─────────────────────────────────────────────────────────────────
+const db = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
+
+async function initDb() {
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS mensagens (
+      id         SERIAL PRIMARY KEY,
+      user_id    TEXT NOT NULL,
+      role       TEXT NOT NULL,
+      content    TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await db.query(`CREATE INDEX IF NOT EXISTS idx_mensagens_user_id ON mensagens (user_id, created_at)`);
+  console.log("Banco de dados pronto.");
 }
 
-function addToHistory(userId, role, content) {
-  const history = getHistory(userId);
-  history.push({ role, content });
-  if (history.length > 20) history.splice(0, history.length - 20);
+async function getHistory(userId) {
+  const res = await db.query(
+    `SELECT role, content FROM mensagens WHERE user_id = $1 ORDER BY created_at DESC LIMIT 35`,
+    [userId]
+  );
+  return res.rows.reverse();
+}
+
+async function addToHistory(userId, role, content) {
+  await db.query(
+    `INSERT INTO mensagens (user_id, role, content) VALUES ($1, $2, $3)`,
+    [userId, role, content]
+  );
 }
 
 // ─── WEBHOOK Z-API ───────────────────────────────────────────────────────────
@@ -181,7 +202,7 @@ app.post("/webhook", async (req, res) => {
     if (body.image) {
       const caption = body.image.caption ? " — legenda: " + body.image.caption : "";
       const mensagemImagem = "[o cliente enviou uma imagem" + caption + "]";
-      addToHistory(body.phone, "user", mensagemImagem);
+      await addToHistory(body.phone, "user", mensagemImagem);
       if (body.image.imageUrl) artes[body.phone] = body.image.imageUrl;
 
       const response = await axios.post(
@@ -190,7 +211,7 @@ app.post("/webhook", async (req, res) => {
           model:      "claude-sonnet-4-20250514",
           max_tokens: 1000,
           system:     AGENT_CONFIG.instructions,
-          messages:   getHistory(body.phone),
+          messages:   await getHistory(body.phone),
         },
         {
           headers: {
@@ -204,7 +225,7 @@ app.post("/webhook", async (req, res) => {
       let reply = response.data.content?.[0]?.text;
       if (!reply) return;
 
-      addToHistory(body.phone, "assistant", reply);
+      await addToHistory(body.phone, "assistant", reply);
       await verificarGatilhos(reply, body.phone);
 
       const replyLimpo = reply
@@ -224,7 +245,7 @@ app.post("/webhook", async (req, res) => {
     const text   = body.text.message;
 
     console.log("[" + userId + "] " + text);
-    addToHistory(userId, "user", text);
+    await addToHistory(userId, "user", text);
 
     const response = await axios.post(
       "https://api.anthropic.com/v1/messages",
@@ -232,7 +253,7 @@ app.post("/webhook", async (req, res) => {
         model:      "claude-sonnet-4-20250514",
         max_tokens: 1000,
         system:     AGENT_CONFIG.instructions,
-        messages:   getHistory(userId),
+        messages:   await getHistory(userId),
       },
       {
         headers: {
@@ -246,7 +267,7 @@ app.post("/webhook", async (req, res) => {
     let reply = response.data.content?.[0]?.text;
     if (!reply) return;
 
-    addToHistory(userId, "assistant", reply);
+    await addToHistory(userId, "assistant", reply);
     await verificarGatilhos(reply, userId);
 
     const replyLimpo = reply
@@ -507,4 +528,9 @@ app.get("/", (req, res) => res.json({
   calendar: GOOGLE_CALENDAR_ENABLED ? "ativo" : "pendente configuracao",
 }));
 
-app.listen(PORT, () => console.log("Agente " + AGENT_CONFIG.name + " da " + AGENT_CONFIG.company + " rodando na porta " + PORT));
+initDb().then(() => {
+  app.listen(PORT, () => console.log("Agente " + AGENT_CONFIG.name + " da " + AGENT_CONFIG.company + " rodando na porta " + PORT));
+}).catch(err => {
+  console.error("Erro ao conectar ao banco:", err.message);
+  process.exit(1);
+});
