@@ -409,14 +409,20 @@ async function criarEventoCalendar(dadosVisita) {
     inicio.setHours(hora, min, 0, 0);
     const fim = new Date(inicio.getTime() + 60 * 60 * 1000);
 
+    const fmtLocal = d => {
+      const p = n => String(n).padStart(2, "0");
+      return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) +
+             "T" + p(d.getHours()) + ":" + p(d.getMinutes()) + ":00";
+    };
+
     await axios.post(
       `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(GOOGLE_CALENDAR_ID || "primary")}/events`,
       {
         summary:     "Visita Técnica - " + nome,
         description: "Produto: " + produto + "\nDados: " + dadosVisita,
         location:    endereco,
-        start: { dateTime: inicio.toISOString(), timeZone: "America/Sao_Paulo" },
-        end:   { dateTime: fim.toISOString(),    timeZone: "America/Sao_Paulo" },
+        start: { dateTime: fmtLocal(inicio), timeZone: "America/Sao_Paulo" },
+        end:   { dateTime: fmtLocal(fim),    timeZone: "America/Sao_Paulo" },
       },
       { headers: { Authorization: "Bearer " + accessToken, "Content-Type": "application/json" } }
     );
