@@ -3,6 +3,7 @@ const express    = require("express");
 const axios      = require("axios");
 const nodemailer = require("nodemailer");
 const { Pool }   = require("pg");
+const cron       = require("node-cron");
 
 const app = express();
 app.use(express.json());
@@ -71,7 +72,7 @@ Use quando o cliente já tem a arte e sabe as medidas do que precisa.
 3. Telefone"
 7. Agradeça e informe que em breve um consultor vai dar continuidade.
 Ao final, inclua EXATAMENTE esta linha:
-[LEAD_CAPTURADO] Nome: {nome} | Empresa: {empresa} | Telefone: {telefone} | Produto: {produto} | Estimativa: {valor}
+[LEAD_CAPTURADO] Tipo: orcamento | Nome: {nome} | Empresa: {empresa} | Telefone: {telefone} | Produto: {produto} | Estimativa: {valor}
 
 CAMINHO 2 — CLIENTE SEM ARTE E SEM MEDIDAS:
 Use quando o cliente ainda não tem arte definida ou não sabe as medidas.
@@ -85,7 +86,7 @@ Use quando o cliente ainda não tem arte definida ou não sabe as medidas.
 3. Telefone"
 5. Agradeça e informe que um consultor vai entrar em contato para ajudar com o projeto.
 Ao final, inclua EXATAMENTE esta linha:
-[LEAD_CAPTURADO] Nome: {nome} | Empresa: {empresa} | Telefone: {telefone} | Produto: {produto} | Estimativa: {valor ou "a definir"}
+[LEAD_CAPTURADO] Tipo: consultoria | Nome: {nome} | Empresa: {empresa} | Telefone: {telefone} | Produto: {produto} | Estimativa: {valor ou "a definir"}
 
 CAMINHO 3 — VISITA TÉCNICA:
 Use quando o produto for instalação, placa grande, ACM ou acrílico.
@@ -183,6 +184,18 @@ async function initDb() {
     )
   `);
   await db.query(`CREATE INDEX IF NOT EXISTS idx_mensagens_user_id ON mensagens (user_id, created_at)`);
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS visitas (
+      id               SERIAL PRIMARY KEY,
+      user_id          TEXT NOT NULL,
+      dados            TEXT NOT NULL,
+      data_visita      DATE,
+      horario          TEXT,
+      lembrete_enviado BOOLEAN DEFAULT FALSE,
+      created_at       TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
   console.log("Banco de dados pronto.");
 }
 
@@ -315,14 +328,68 @@ async function sendZAPIMessage(phone, text) {
   );
 }
 
+// ─── HELPERS ─────────────────────────────────────────────────────────────────
+function formatarTelefoneWA(telefone) {
+  const nums = (telefone || "").replace(/\D/g, "");
+  return nums.startsWith("55") && nums.length >= 12 ? nums : "55" + nums;
+}
+
+function parsearDataParaDB(dataStr) {
+  const hoje = new Date();
+  const match = dataStr.match(/(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?/) ||
+                dataStr.match(/dia\s*(\d{1,2})/);
+  if (!match) return null;
+  let dia, mes, ano;
+  if (match[0].includes("/") || match[0].includes("-")) {
+    dia = parseInt(match[1]);
+    mes = parseInt(match[2]) - 1;
+    ano = match[3] ? parseInt(match[3] < 100 ? "20" + match[3] : match[3]) : hoje.getFullYear();
+  } else {
+    dia = parseInt(match[1]);
+    mes = hoje.getMonth();
+    ano = hoje.getFullYear();
+    if (dia <= hoje.getDate()) mes += 1;
+  }
+  const d = new Date(ano, mes, dia);
+  const p = n => String(n).padStart(2, "0");
+  return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
+}
+
 // ─── GATILHOS ────────────────────────────────────────────────────────────────
 async function verificarGatilhos(reply, userId) {
   if (reply.includes("[LEAD_CAPTURADO]")) {
     const linha = reply.match(/\[LEAD_CAPTURADO\](.*)/)?.[1]?.trim() || "";
-    const corpo = "A Olivia coletou um novo lead:\n\n" + linha + "\n\nRetorne ao cliente para dar continuidade.";
-    await notificarResponsavel("Novo lead capturado pela Olivia - Comunynk", corpo);
+    const tipo     = linha.match(/Tipo: ([^|]+)/)?.[1]?.trim()     || "orcamento";
+    const nome     = linha.match(/Nome: ([^|]+)/)?.[1]?.trim()     || "Cliente";
+    const empresa  = linha.match(/Empresa: ([^|]+)/)?.[1]?.trim()  || "";
+    const telefone = linha.match(/Telefone: ([^|]+)/)?.[1]?.trim() || "";
+    const produto  = linha.match(/Produto: ([^|]+)/)?.[1]?.trim()  || "";
+    const estimativa = linha.match(/Estimativa: ([^|]+)/)?.[1]?.trim() || "";
+    const foneWA   = formatarTelefoneWA(telefone);
 
-    // Encaminha a arte como imagem direta, se houver
+    let assunto, intro, msgSugerida;
+    if (tipo === "consultoria") {
+      assunto = "Novo lead para consultoria - Comunynk";
+      intro   = "Cliente sem arte ou medidas definidas. Precisa de apoio para estruturar o projeto.";
+      msgSugerida = `Olá ${nome}, tudo bem? Sou da equipe da Comunynk. A Olivia me passou seu contato. Vi que você está precisando de ${produto} e nosso time pode te ajudar a definir o projeto. Quando tiver um momento para conversarmos?`;
+    } else {
+      assunto = "Novo lead para orçamento - Comunynk";
+      intro   = "Cliente com arte e medidas. Pronto para receber orçamento detalhado.";
+      msgSugerida = `Olá ${nome}, tudo bem? Sou da equipe da Comunynk. A Olivia me passou seu contato. Você estava interessado em ${produto} com estimativa de ${estimativa}. Posso te enviar o orçamento detalhado agora.`;
+    }
+
+    const corpo =
+      `${intro}\n\n` +
+      `Nome: ${nome}\n` +
+      `Empresa: ${empresa}\n` +
+      `Telefone: ${telefone}\n` +
+      `Produto: ${produto}\n` +
+      `Estimativa: ${estimativa}\n\n` +
+      `Abrir conversa: https://wa.me/${foneWA}\n\n` +
+      `Mensagem sugerida:\n"${msgSugerida}"`;
+
+    await notificarResponsavel(assunto, corpo);
+
     const arteUrl = artes[userId];
     if (arteUrl && NOTIFICACOES.whatsapp_responsavel !== "PREENCHA_AQUI") {
       try {
@@ -331,14 +398,9 @@ async function verificarGatilhos(reply, userId) {
           {
             phone:   NOTIFICACOES.whatsapp_responsavel,
             image:   arteUrl,
-            caption: "Arte do cliente: " + (linha.match(/Nome: ([^|]+)/)?.[1]?.trim() || ""),
+            caption: "Arte do cliente: " + nome,
           },
-          {
-            headers: {
-              "Client-Token": ZAPI_CLIENT_TOKEN,
-              "Content-Type": "application/json",
-            },
-          }
+          { headers: { "Client-Token": ZAPI_CLIENT_TOKEN, "Content-Type": "application/json" } }
         );
         console.log("Arte encaminhada para o responsavel.");
       } catch (err) {
@@ -348,7 +410,18 @@ async function verificarGatilhos(reply, userId) {
   }
 
   if (reply.includes("[VISITA_SOLICITADA]")) {
-    const linha = reply.match(/\[VISITA_SOLICITADA\](.*)/)?.[1]?.trim() || "";
+    const linha    = reply.match(/\[VISITA_SOLICITADA\](.*)/)?.[1]?.trim() || "";
+    const nome     = linha.match(/Nome: ([^|]+)/)?.[1]?.trim()     || "Cliente";
+    const empresa  = linha.match(/Empresa: ([^|]+)/)?.[1]?.trim()  || "";
+    const telefone = linha.match(/Telefone: ([^|]+)/)?.[1]?.trim() || "";
+    const endereco = linha.match(/Endereço: ([^|]+)/)?.[1]?.trim() || "";
+    const produto  = linha.match(/Produto: ([^|]+)/)?.[1]?.trim()  || "";
+    const estimativa = linha.match(/Estimativa: ([^|]+)/)?.[1]?.trim() || "";
+    const dataStr  = linha.match(/Data: ([^|]+)/)?.[1]?.trim()     || "";
+    const horario  = linha.match(/Horario: ([^|]+)/)?.[1]?.trim()  || "";
+    const foneWA   = formatarTelefoneWA(telefone);
+    const dataDB   = parsearDataParaDB(dataStr);
+
     console.log("[VISITA_SOLICITADA] detectado:", linha);
     console.log("[GOOGLE CALENDAR] ENABLED:", GOOGLE_CALENDAR_ENABLED, "| REFRESH_TOKEN:", GOOGLE_REFRESH_TOKEN ? "OK" : "AUSENTE");
 
@@ -356,10 +429,29 @@ async function verificarGatilhos(reply, userId) {
       await criarEventoCalendar(linha);
     }
 
-    await notificarResponsavel(
-      "Nova visita técnica solicitada pela Olivia - Comunynk",
-      "A Olivia registrou uma solicitação de visita técnica:\n\n" + linha + "\n\nConfirme a disponibilidade com o cliente.\n\nLembrete: enviar mensagem de confirmação ao cliente no dia da visita."
-    );
+    if (dataDB) {
+      await db.query(
+        `INSERT INTO visitas (user_id, dados, data_visita, horario) VALUES ($1, $2, $3, $4)`,
+        [userId, linha, dataDB, horario]
+      );
+    }
+
+    const msgSugerida = `Olá ${nome}, tudo bem? Sou da equipe da Comunynk. Passando para confirmar a visita técnica agendada para ${dataStr} às ${horario}. Estaremos no endereço informado. Qualquer dúvida, estou à disposição.`;
+
+    const corpo =
+      `Visita técnica agendada pela Olivia.\n\n` +
+      `Nome: ${nome}\n` +
+      `Empresa: ${empresa}\n` +
+      `Telefone: ${telefone}\n` +
+      `Endereço: ${endereco}\n` +
+      `Produto: ${produto}\n` +
+      `Estimativa: ${estimativa}\n` +
+      `Data: ${dataStr}\n` +
+      `Horário: ${horario}\n\n` +
+      `Abrir conversa: https://wa.me/${foneWA}\n\n` +
+      `Mensagem sugerida para confirmar no dia:\n"${msgSugerida}"`;
+
+    await notificarResponsavel("Nova visita técnica - Comunynk", corpo);
   }
 }
 
@@ -551,6 +643,43 @@ app.get("/", (req, res) => res.json({
   company: AGENT_CONFIG.company,
   calendar: GOOGLE_CALENDAR_ENABLED ? "ativo" : "pendente configuracao",
 }));
+
+// ─── LEMBRETE DIÁRIO DE VISITAS (8h horário de Brasília) ─────────────────────
+cron.schedule("0 8 * * *", async () => {
+  try {
+    const agora = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+    const p = n => String(n).padStart(2, "0");
+    const hoje = agora.getFullYear() + "-" + p(agora.getMonth() + 1) + "-" + p(agora.getDate());
+
+    const res = await db.query(
+      `SELECT * FROM visitas WHERE data_visita = $1 AND lembrete_enviado = FALSE`,
+      [hoje]
+    );
+
+    for (const visita of res.rows) {
+      const nome     = visita.dados.match(/Nome: ([^|]+)/)?.[1]?.trim()     || "Cliente";
+      const telefone = visita.dados.match(/Telefone: ([^|]+)/)?.[1]?.trim() || "";
+      const horario  = visita.horario || "";
+      const foneWA   = formatarTelefoneWA(telefone);
+
+      const msgSugerida = `Olá ${nome}, tudo bem? Passando para confirmar a visita técnica de hoje às ${horario}. Qualquer dúvida, estou à disposição.`;
+      const corpo =
+        `Visita técnica hoje!\n\n` +
+        `Cliente: ${nome}\n` +
+        `Telefone: ${telefone}\n` +
+        `Horário: ${horario}\n\n` +
+        `Abrir conversa: https://wa.me/${foneWA}\n\n` +
+        `Mensagem sugerida:\n"${msgSugerida}"`;
+
+      await notificarResponsavel("Lembrete de visita técnica hoje - " + nome, corpo);
+
+      await db.query(`UPDATE visitas SET lembrete_enviado = TRUE WHERE id = $1`, [visita.id]);
+      console.log("[LEMBRETE] Visita enviada para:", nome);
+    }
+  } catch (err) {
+    console.error("Erro no lembrete de visitas:", err.message);
+  }
+}, { timezone: "America/Sao_Paulo" });
 
 initDb().then(() => {
   app.listen(PORT, () => console.log("Agente " + AGENT_CONFIG.name + " da " + AGENT_CONFIG.company + " rodando na porta " + PORT));
