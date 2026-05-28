@@ -214,6 +214,68 @@ async function addToHistory(userId, role, content) {
   );
 }
 
+// ─── RELAY DO RESPONSÁVEL ────────────────────────────────────────────────────
+async function processarMensagemResponsavel(body) {
+  const texto = body.text?.message || "";
+
+  // Tenta extrair o telefone do cliente por dois caminhos
+  let clientePhone = null;
+
+  // Caminho 1: prefixo @55... no início da mensagem
+  const matchPrefixo = texto.match(/^@(\d+)\s*([\s\S]*)/);
+  if (matchPrefixo) {
+    clientePhone = matchPrefixo[1];
+  }
+
+  // Caminho 2: resposta a uma notificação da Olivia (wa.me link no quotedMsg)
+  if (!clientePhone) {
+    const quotedBody = body.quotedMsg?.body || body.quotedMsg?.caption || "";
+    const matchWA = quotedBody.match(/wa\.me\/(\d+)/);
+    if (matchWA) clientePhone = matchWA[1];
+  }
+
+  if (!clientePhone) {
+    await sendZAPIMessage(
+      NOTIFICACOES.whatsapp_responsavel,
+      "Não consegui identificar o cliente destino.\n\n" +
+      "Use um destes formatos:\n" +
+      "1. Responda a uma notificação da Olivia\n" +
+      "2. Inicie a mensagem com @55DDD99999999 seguido do texto"
+    );
+    return;
+  }
+
+  const intro = "Segue uma mensagem da nossa equipe:";
+  const conteudo = matchPrefixo ? matchPrefixo[2].trim() : texto.trim();
+
+  try {
+    if (body.image?.imageUrl) {
+      await axios.post(
+        `https://api.z-api.io/instances/${ZAPI_INSTANCE_ID}/token/${ZAPI_TOKEN}/send-image`,
+        { phone: clientePhone, image: body.image.imageUrl, caption: intro + (conteudo ? "\n" + conteudo : "") },
+        { headers: { "Client-Token": ZAPI_CLIENT_TOKEN, "Content-Type": "application/json" } }
+      );
+    } else if (body.document?.documentUrl) {
+      await axios.post(
+        `https://api.z-api.io/instances/${ZAPI_INSTANCE_ID}/token/${ZAPI_TOKEN}/send-document`,
+        { phone: clientePhone, document: body.document.documentUrl, fileName: body.document.fileName || "documento.pdf", caption: intro },
+        { headers: { "Client-Token": ZAPI_CLIENT_TOKEN, "Content-Type": "application/json" } }
+      );
+    } else if (conteudo) {
+      await sendZAPIMessage(clientePhone, intro + "\n\n" + conteudo);
+    } else {
+      await sendZAPIMessage(NOTIFICACOES.whatsapp_responsavel, "Mensagem vazia. Nada foi enviado.");
+      return;
+    }
+
+    console.log("[RELAY] Mensagem encaminhada para cliente:", clientePhone);
+    await sendZAPIMessage(NOTIFICACOES.whatsapp_responsavel, "Mensagem encaminhada para " + clientePhone + ".");
+  } catch (err) {
+    console.error("Erro no relay:", err.response?.data || err.message);
+    await sendZAPIMessage(NOTIFICACOES.whatsapp_responsavel, "Erro ao encaminhar a mensagem. Tente novamente.");
+  }
+}
+
 // ─── WEBHOOK Z-API ───────────────────────────────────────────────────────────
 app.post("/webhook", async (req, res) => {
   res.sendStatus(200);
@@ -223,9 +285,17 @@ app.post("/webhook", async (req, res) => {
     if (body.fromMe) return;
     if (body.isGroup) return;
 
+    // Detecta se é o responsável enviando um relay
+    const foneBody       = (body.phone || "").replace(/\D/g, "");
+    const foneResponsavel = (NOTIFICACOES.whatsapp_responsavel || "").replace(/\D/g, "");
+    if (foneResponsavel !== "PREENCHA_AQUI" && foneBody === foneResponsavel) {
+      await processarMensagemResponsavel(body);
+      return;
+    }
+
     // Responde áudios sem chamar o Claude
     if (body.audio) {
-      await sendZAPIMessage(body.phone, "Desculpe, infelizmente não consigo ouvir áudios por aqui. Pode me escrever o que precisa? Fico à disposição.");
+      await sendZAPIMessage(body.phone, "Não consigo ouvir áudios por aqui. Pode me escrever o que precisa?");
       return;
     }
 
