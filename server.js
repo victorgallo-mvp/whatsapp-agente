@@ -311,7 +311,7 @@ app.post("/webhook", async (req, res) => {
         {
           model:      "claude-sonnet-4-20250514",
           max_tokens: 1000,
-          system:     AGENT_CONFIG.instructions,
+          system:     promptComData(),
           messages:   await getHistory(body.phone),
         },
         {
@@ -399,6 +399,13 @@ async function sendZAPIMessage(phone, text) {
 }
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
+function promptComData() {
+  const dias   = ["domingo", "segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado"];
+  const meses  = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+  const agora  = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+  const dataStr = `${dias[agora.getDay()]}, ${agora.getDate()} de ${meses[agora.getMonth()]} de ${agora.getFullYear()}`;
+  return `Hoje é ${dataStr}. Use essa data como referência para qualquer cálculo de prazo ou agendamento.\n\n` + AGENT_CONFIG.instructions;
+}
 function formatarTelefoneWA(telefone) {
   const nums = (telefone || "").replace(/\D/g, "");
   return nums.startsWith("55") && nums.length >= 12 ? nums : "55" + nums;
