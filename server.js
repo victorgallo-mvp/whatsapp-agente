@@ -169,7 +169,6 @@ Responda sempre em português.`,
 };
 
 const artes = {};
-let ultimoClienteNotificado = null; // phone do último cliente sobre o qual o responsável foi notificado
 
 // ─── POSTGRES ─────────────────────────────────────────────────────────────────
 const db = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
@@ -228,19 +227,12 @@ async function processarMensagemResponsavel(body) {
     clientePhone = matchPrefixo[1];
   }
 
-  // Caminho 2: usa o último cliente sobre o qual o responsável foi notificado
-  if (!clientePhone && ultimoClienteNotificado) {
-    clientePhone = ultimoClienteNotificado;
-    console.log("[RELAY] Usando ultimo cliente notificado:", clientePhone);
-  }
+  console.log("[RELAY] clientePhone extraido:", clientePhone, "| texto:", texto, "| tipo:", body.image ? "imagem" : body.document ? "documento" : "texto");
 
   if (!clientePhone) {
     await sendZAPIMessage(
       NOTIFICACOES.whatsapp_responsavel,
-      "Não consegui identificar o cliente destino.\n\n" +
-      "Use um destes formatos:\n" +
-      "1. Responda a uma notificação da Olivia\n" +
-      "2. Inicie a mensagem com @55DDD99999999 seguido do texto"
+      "Não consegui identificar o cliente destino.\n\nInicie a mensagem com @55DDD99999999 seguido do texto.\nExemplo: @5511999998888 Segue o orçamento."
     );
     return;
   }
@@ -465,7 +457,6 @@ async function verificarGatilhos(reply, userId) {
       `Abrir conversa: https://wa.me/${foneWA}\n\n` +
       `Mensagem sugerida:\n"${msgSugerida}"`;
 
-    ultimoClienteNotificado = userId;
     await notificarResponsavel(assunto, corpo);
 
     const arteUrl = artes[userId];
@@ -529,7 +520,6 @@ async function verificarGatilhos(reply, userId) {
       `Abrir conversa: https://wa.me/${foneWA}\n\n` +
       `Mensagem sugerida para confirmar no dia:\n"${msgSugerida}"`;
 
-    ultimoClienteNotificado = userId;
     await notificarResponsavel("Nova visita técnica - Comunynk", corpo);
   }
 }
