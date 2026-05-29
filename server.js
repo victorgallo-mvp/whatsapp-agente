@@ -286,9 +286,13 @@ app.post("/webhook", async (req, res) => {
     if (body.isGroup) return;
 
     // Detecta se é o responsável enviando um relay
-    const foneBody       = (body.phone || "").replace(/\D/g, "");
+    const foneBody        = (body.phone || "").replace(/\D/g, "");
     const foneResponsavel = (NOTIFICACOES.whatsapp_responsavel || "").replace(/\D/g, "");
-    if (foneResponsavel !== "PREENCHA_AQUI" && foneBody === foneResponsavel) {
+    const semDDI          = n => n.startsWith("55") && n.length >= 12 ? n.slice(2) : n;
+    const ehResponsavel   = foneResponsavel.length > 5 &&
+                            (foneBody === foneResponsavel || semDDI(foneBody) === semDDI(foneResponsavel));
+    console.log("[WEBHOOK] fone:", foneBody, "| responsavel:", foneResponsavel, "| match:", ehResponsavel);
+    if (ehResponsavel) {
       await processarMensagemResponsavel(body);
       return;
     }
