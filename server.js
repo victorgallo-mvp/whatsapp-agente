@@ -228,15 +228,7 @@ async function processarMensagemResponsavel(body) {
     clientePhone = matchPrefixo[1];
   }
 
-  // Caminho 2: resposta a uma notificação da Olivia (wa.me link no quotedMsg)
-  if (!clientePhone) {
-    const quotedBody = body.quotedMsg?.body || body.quotedMsg?.caption || "";
-    console.log("[RELAY] quotedMsg recebido:", JSON.stringify(body.quotedMsg));
-    const matchWA = quotedBody.match(/wa\.me\/(\d+)/);
-    if (matchWA) clientePhone = matchWA[1];
-  }
-
-  // Caminho 3: usa o último cliente sobre o qual o responsável foi notificado
+  // Caminho 2: usa o último cliente sobre o qual o responsável foi notificado
   if (!clientePhone && ultimoClienteNotificado) {
     clientePhone = ultimoClienteNotificado;
     console.log("[RELAY] Usando ultimo cliente notificado:", clientePhone);
