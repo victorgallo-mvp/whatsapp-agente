@@ -54,17 +54,22 @@ CATÁLOGO E PORTFÓLIO:
 
 Se o cliente pedir exemplos, referências ou portfólio, oriente a ver o catálogo disponível aqui no próprio WhatsApp da Comunynk.
 
+ARTE:
+
+Produtos de impressão (adesivo, lona, banner, tecido, canvas, fotográfico, papel, jateado, preto fosco, perfurado, cartão, flyer) sempre precisam de arte para produção. Para esses produtos, solicite a arte em qualquer caminho — mesmo que o cliente não tenha medidas. Diga: "Você pode enviar a arte aqui pelo WhatsApp, mesmo que ainda não tenha as medidas definidas."
+Não calcule estimativa de impressão sem ter pelo menos uma referência de tamanho da arte.
+
 TRÊS CAMINHOS DE ATENDIMENTO:
 
 Identifique o perfil do cliente e siga o caminho correspondente.
 
 CAMINHO 1 — CLIENTE COM ARTE E MEDIDAS:
-Use quando o cliente já tem a arte e sabe as medidas do que precisa.
+Use quando o cliente já tem a arte e sabe as medidas.
 1. Cumprimente e entenda o produto.
 2. Colete as informações técnicas uma por vez: medidas da arte, quantidade, acabamento.
-   Medidas da arte são o que determina o preço — não o tamanho da vitrine ou do espaço. Se o cliente mencionar o tamanho do local (ex: vitrine de 2m), use como referência para ajudar a estimar o tamanho da arte, mas sempre pergunte: "E qual seria o tamanho da arte em si?"
+   Medidas da arte determinam o preço, não o tamanho do local. Se o cliente mencionar o tamanho do espaço, use como referência mas pergunte: "E qual seria o tamanho da arte em si?"
 3. Solicite a arte (pode enviar aqui pelo WhatsApp).
-4. Com a arte e as medidas, apresente a estimativa com o valor total. Nunca mencione o valor por m². Nunca explique o cálculo.
+4. Com arte e medidas, apresente a estimativa com o valor total. Nunca mencione o valor por m². Nunca explique o cálculo.
 5. Pergunte se tem interesse em prosseguir.
 6. Se sim, solicite os dados de contato em uma única mensagem numerada:
 "Preciso de algumas informações para finalizar:
@@ -75,17 +80,18 @@ Use quando o cliente já tem a arte e sabe as medidas do que precisa.
 Ao final, inclua EXATAMENTE esta linha:
 [LEAD_CAPTURADO] Tipo: orcamento | Nome: {nome} | Empresa: {empresa} | Telefone: {telefone} | Produto: {produto} | Estimativa: {valor}
 
-CAMINHO 2 — CLIENTE SEM ARTE E SEM MEDIDAS:
-Use quando o cliente ainda não tem arte definida ou não sabe as medidas.
+CAMINHO 2 — CLIENTE SEM MEDIDAS:
+Use quando o cliente não sabe as medidas exatas.
 1. Cumprimente e entenda o produto.
-2. Colete o máximo de informações e referências: tipo de produto, onde será instalado, referências visuais, cores, estilo. Se o cliente mencionar o tamanho do local (ex: vitrine, parede), use como referência para entender o contexto, mas não confunda com o tamanho da arte. Não insista em medidas.
-3. Apresente estimativa de preço somente se o cliente mencionar alguma referência de tamanho da arte. Se não houver medidas, diga que o consultor vai ajudar a definir tudo.
-4. Solicite os dados de contato em uma única mensagem numerada:
+2. Colete referências: onde será instalado, cores, estilo, tamanho aproximado do espaço.
+3. Se o produto precisar de arte (veja seção ARTE acima), solicite a arte mesmo sem medidas.
+4. Apresente estimativa somente se houver alguma referência de tamanho da arte. Caso contrário, diga que o consultor vai ajudar a definir.
+5. Solicite os dados de contato em uma única mensagem numerada:
 "Preciso de algumas informações para colocar você em contato com nosso time:
 1. Nome completo
 2. Nome da empresa ou estabelecimento
 3. Telefone"
-5. Agradeça e informe que um consultor vai entrar em contato para ajudar com o projeto.
+6. Agradeça e informe que um consultor vai entrar em contato.
 Ao final, inclua EXATAMENTE esta linha:
 [LEAD_CAPTURADO] Tipo: consultoria | Nome: {nome} | Empresa: {empresa} | Telefone: {telefone} | Produto: {produto} | Estimativa: {valor ou "a definir"}
 
@@ -187,6 +193,15 @@ async function initDb() {
   await db.query(`CREATE INDEX IF NOT EXISTS idx_mensagens_user_id ON mensagens (user_id, created_at)`);
 
   await db.query(`
+    CREATE TABLE IF NOT EXISTS clientes (
+      phone      TEXT PRIMARY KEY,
+      nome       TEXT,
+      empresa    TEXT,
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  await db.query(`
     CREATE TABLE IF NOT EXISTS visitas (
       id               SERIAL PRIMARY KEY,
       user_id          TEXT NOT NULL,
@@ -206,6 +221,19 @@ async function getHistory(userId) {
     [userId]
   );
   return res.rows.reverse();
+}
+
+async function getCliente(phone) {
+  const res = await db.query(`SELECT nome, empresa FROM clientes WHERE phone = $1`, [phone]);
+  return res.rows[0] || null;
+}
+
+async function upsertCliente(phone, nome, empresa) {
+  await db.query(
+    `INSERT INTO clientes (phone, nome, empresa) VALUES ($1, $2, $3)
+     ON CONFLICT (phone) DO UPDATE SET nome = $2, empresa = $3, updated_at = NOW()`,
+    [phone, nome, empresa]
+  );
 }
 
 async function addToHistory(userId, role, content) {
@@ -306,13 +334,14 @@ app.post("/webhook", async (req, res) => {
       await addToHistory(body.phone, "user", mensagemImagem);
       if (body.image.imageUrl) artes[body.phone] = body.image.imageUrl;
 
+      const clienteImg = await getCliente(body.phone);
       const response = await axios.post(
         "https://api.anthropic.com/v1/messages",
         {
           model:      "claude-sonnet-4-20250514",
           max_tokens: 1000,
           system:     promptComData(),
-          messages:   mensagensComData(await getHistory(body.phone)),
+          messages:   mensagensComData(await getHistory(body.phone), clienteImg),
         },
         {
           headers: {
@@ -348,13 +377,14 @@ app.post("/webhook", async (req, res) => {
     console.log("[" + userId + "] " + text);
     await addToHistory(userId, "user", text);
 
+    const cliente = await getCliente(userId);
     const response = await axios.post(
       "https://api.anthropic.com/v1/messages",
       {
         model:      "claude-sonnet-4-20250514",
         max_tokens: 1000,
         system:     promptComData(),
-        messages:   mensagensComData(await getHistory(userId)),
+        messages:   mensagensComData(await getHistory(userId), cliente),
       },
       {
         headers: {
@@ -413,11 +443,14 @@ function promptComData() {
          `\n\nLEMBRETE FINAL: hoje é ${d}. Qualquer data de visita deve ser calculada a partir daqui.`;
 }
 
-function mensagensComData(history) {
+function mensagensComData(history, cliente = null) {
   const d = dataAtualStr();
+  const ctx = cliente
+    ? `[Sistema] Hoje é ${d}. Cliente recorrente identificado — Nome: ${cliente.nome} | Empresa: ${cliente.empresa}. Confirme os dados com o cliente antes de prosseguir, em vez de pedir novamente.`
+    : `[Sistema] Hoje é ${d}.`;
   return [
-    { role: "user",      content: `[Sistema] Hoje é ${d}.` },
-    { role: "assistant", content: `Entendido. Hoje é ${d}.` },
+    { role: "user",      content: ctx },
+    { role: "assistant", content: `Entendido.` },
     ...history,
   ];
 }
@@ -480,6 +513,7 @@ async function verificarGatilhos(reply, userId) {
       `Abrir conversa: https://wa.me/${foneWA}\n\n` +
       `Mensagem sugerida:\n"${msgSugerida}"`;
 
+    await upsertCliente(userId, nome, empresa);
     await notificarResponsavel(assunto, corpo);
 
     const arteUrl = artes[userId];
@@ -543,6 +577,7 @@ async function verificarGatilhos(reply, userId) {
       `Abrir conversa: https://wa.me/${foneWA}\n\n` +
       `Mensagem sugerida para confirmar no dia:\n"${msgSugerida}"`;
 
+    await upsertCliente(userId, nome, empresa);
     await notificarResponsavel("Nova visita técnica - Comunynk", corpo);
   }
 }
