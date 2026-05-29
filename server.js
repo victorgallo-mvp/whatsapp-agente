@@ -169,6 +169,7 @@ Responda sempre em português.`,
 };
 
 const artes = {};
+let ultimoClienteNotificado = null; // phone do último cliente sobre o qual o responsável foi notificado
 
 // ─── POSTGRES ─────────────────────────────────────────────────────────────────
 const db = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
@@ -230,8 +231,15 @@ async function processarMensagemResponsavel(body) {
   // Caminho 2: resposta a uma notificação da Olivia (wa.me link no quotedMsg)
   if (!clientePhone) {
     const quotedBody = body.quotedMsg?.body || body.quotedMsg?.caption || "";
+    console.log("[RELAY] quotedMsg recebido:", JSON.stringify(body.quotedMsg));
     const matchWA = quotedBody.match(/wa\.me\/(\d+)/);
     if (matchWA) clientePhone = matchWA[1];
+  }
+
+  // Caminho 3: usa o último cliente sobre o qual o responsável foi notificado
+  if (!clientePhone && ultimoClienteNotificado) {
+    clientePhone = ultimoClienteNotificado;
+    console.log("[RELAY] Usando ultimo cliente notificado:", clientePhone);
   }
 
   if (!clientePhone) {
@@ -465,6 +473,7 @@ async function verificarGatilhos(reply, userId) {
       `Abrir conversa: https://wa.me/${foneWA}\n\n` +
       `Mensagem sugerida:\n"${msgSugerida}"`;
 
+    ultimoClienteNotificado = userId;
     await notificarResponsavel(assunto, corpo);
 
     const arteUrl = artes[userId];
@@ -528,6 +537,7 @@ async function verificarGatilhos(reply, userId) {
       `Abrir conversa: https://wa.me/${foneWA}\n\n` +
       `Mensagem sugerida para confirmar no dia:\n"${msgSugerida}"`;
 
+    ultimoClienteNotificado = userId;
     await notificarResponsavel("Nova visita técnica - Comunynk", corpo);
   }
 }
