@@ -216,7 +216,7 @@ async function addToHistory(userId, role, content) {
 
 // ─── RELAY DO RESPONSÁVEL ────────────────────────────────────────────────────
 async function processarMensagemResponsavel(body) {
-  const texto = body.text?.message || "";
+  const texto = body.text?.message || body.image?.caption || body.document?.caption || "";
 
   // Tenta extrair o telefone do cliente por dois caminhos
   let clientePhone = null;
