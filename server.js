@@ -297,6 +297,68 @@ async function processarMensagemResponsavel(body) {
   }
 }
 
+// ─── DEBOUNCE DE MENSAGENS ───────────────────────────────────────────────────
+const pendingMessages = {};
+const DEBOUNCE_MS = 3500;
+
+function enfileirarMensagem(userId, item) {
+  if (!pendingMessages[userId]) {
+    pendingMessages[userId] = { timer: null, items: [] };
+  }
+  pendingMessages[userId].items.push(item);
+  clearTimeout(pendingMessages[userId].timer);
+  pendingMessages[userId].timer = setTimeout(
+    () => processarMensagensPendentes(userId),
+    DEBOUNCE_MS
+  );
+}
+
+async function processarMensagensPendentes(userId) {
+  const pending = pendingMessages[userId];
+  if (!pending) return;
+  delete pendingMessages[userId];
+
+  try {
+    for (const item of pending.items) {
+      await addToHistory(userId, "user", item.content);
+    }
+
+    const cliente  = await getCliente(userId);
+    const response = await axios.post(
+      "https://api.anthropic.com/v1/messages",
+      {
+        model:    "claude-sonnet-4-20250514",
+        max_tokens: 1000,
+        system:   promptComData(),
+        messages: mensagensComData(await getHistory(userId), cliente),
+      },
+      {
+        headers: {
+          "x-api-key":         ANTHROPIC_API_KEY,
+          "anthropic-version": "2023-06-01",
+          "Content-Type":      "application/json",
+        },
+      }
+    );
+
+    let reply = response.data.content?.[0]?.text;
+    if (!reply) return;
+
+    await addToHistory(userId, "assistant", reply);
+    await verificarGatilhos(reply, userId);
+
+    const replyLimpo = reply
+      .replace(/\[LEAD_CAPTURADO\].*/g, "")
+      .replace(/\[VISITA_SOLICITADA\].*/g, "")
+      .trim();
+
+    console.log("[OLIVIA RESPONDE] " + replyLimpo);
+    await sendZAPIMessage(userId, replyLimpo);
+  } catch (err) {
+    console.error("Erro ao processar mensagens:", err.response?.data || err.message);
+  }
+}
+
 // ─── WEBHOOK Z-API ───────────────────────────────────────────────────────────
 app.post("/webhook", async (req, res) => {
   res.sendStatus(200);
@@ -321,93 +383,26 @@ app.post("/webhook", async (req, res) => {
       return;
     }
 
-    // Responde áudios sem chamar o Claude
+    // Áudio: responde imediatamente, sem debounce
     if (body.audio) {
       await sendZAPIMessage(body.phone, "Não consigo ouvir áudios por aqui. Pode me escrever o que precisa?");
       return;
     }
 
-    // Detecta imagem e injeta como mensagem de texto no histórico
+    const userId = body.phone;
+
+    // Imagem: enfileira com o texto representativo
     if (body.image) {
       const caption = body.image.caption ? " — legenda: " + body.image.caption : "";
-      const mensagemImagem = "[o cliente enviou uma imagem" + caption + "]";
-      await addToHistory(body.phone, "user", mensagemImagem);
-      if (body.image.imageUrl) artes[body.phone] = body.image.imageUrl;
-
-      const clienteImg = await getCliente(body.phone);
-      const response = await axios.post(
-        "https://api.anthropic.com/v1/messages",
-        {
-          model:      "claude-sonnet-4-20250514",
-          max_tokens: 1000,
-          system:     promptComData(),
-          messages:   mensagensComData(await getHistory(body.phone), clienteImg),
-        },
-        {
-          headers: {
-            "x-api-key":         ANTHROPIC_API_KEY,
-            "anthropic-version": "2023-06-01",
-            "Content-Type":      "application/json",
-          },
-        }
-      );
-
-      let reply = response.data.content?.[0]?.text;
-      if (!reply) return;
-
-      await addToHistory(body.phone, "assistant", reply);
-      await verificarGatilhos(reply, body.phone);
-
-      const replyLimpo = reply
-        .replace(/\[LEAD_CAPTURADO\].*/g, "")
-        .replace(/\[VISITA_SOLICITADA\].*/g, "")
-        .trim();
-
-      console.log("[OLIVIA RESPONDE - IMAGEM] " + replyLimpo);
-      await sendZAPIMessage(body.phone, replyLimpo);
+      if (body.image.imageUrl) artes[userId] = body.image.imageUrl;
+      enfileirarMensagem(userId, { content: "[o cliente enviou uma imagem" + caption + "]" });
       return;
     }
 
-    // Ignora se não for mensagem de texto
+    // Texto: enfileira
     if (!body.text?.message) return;
-
-    const userId = body.phone;
-    const text   = body.text.message;
-
-    console.log("[" + userId + "] " + text);
-    await addToHistory(userId, "user", text);
-
-    const cliente = await getCliente(userId);
-    const response = await axios.post(
-      "https://api.anthropic.com/v1/messages",
-      {
-        model:      "claude-sonnet-4-20250514",
-        max_tokens: 1000,
-        system:     promptComData(),
-        messages:   mensagensComData(await getHistory(userId), cliente),
-      },
-      {
-        headers: {
-          "x-api-key":         ANTHROPIC_API_KEY,
-          "anthropic-version": "2023-06-01",
-          "Content-Type":      "application/json",
-        },
-      }
-    );
-
-    let reply = response.data.content?.[0]?.text;
-    if (!reply) return;
-
-    await addToHistory(userId, "assistant", reply);
-    await verificarGatilhos(reply, userId);
-
-    const replyLimpo = reply
-      .replace(/\[LEAD_CAPTURADO\].*/g, "")
-      .replace(/\[VISITA_SOLICITADA\].*/g, "")
-      .trim();
-
-    console.log("[OLIVIA RESPONDE] " + replyLimpo);
-    await sendZAPIMessage(userId, replyLimpo);
+    console.log("[" + userId + "] " + body.text.message);
+    enfileirarMensagem(userId, { content: body.text.message });
 
   } catch (err) {
     console.error("Erro:", err.response?.data || err.message);
