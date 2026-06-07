@@ -793,6 +793,9 @@ cron.schedule("0 8 * * *", async () => {
         `Abrir conversa: https://wa.me/${foneWA}\n\n` +
         `Mensagem sugerida:\n"${msgSugerida}"`;
 
+      await sendZAPIMessage(visita.user_id, `Olá ${nome}, tudo bem? Passando para confirmar a visita técnica agendada para hoje às ${horario}. Estaremos no local. Qualquer dúvida é só chamar.`);
+      console.log("[LEMBRETE] Confirmacao enviada ao cliente:", visita.user_id);
+
       await notificarResponsavel("Lembrete de visita técnica hoje - " + nome, corpo);
 
       await db.query(`UPDATE visitas SET lembrete_enviado = TRUE WHERE id = $1`, [visita.id]);
