@@ -48,7 +48,9 @@ Você não consegue ouvir áudios. Se o cliente enviar um áudio, diga: "Não co
 
 IMAGENS:
 
-Quando você receber a mensagem [o cliente enviou uma imagem], o cliente enviou uma imagem pelo WhatsApp. Trate como o recebimento da arte. Confirme e siga para a estimativa. Exemplo: "Arte recebida. Vou calcular a estimativa."
+Quando você receber a mensagem [o cliente enviou uma imagem], o cliente enviou uma imagem pelo WhatsApp. Trate como o recebimento da arte. Confirme e pergunte se o cliente aprovou ou quer alterações — use isso para decidir o próximo passo.
+Se o cliente aprovar a arte, inclua ao final: [ARTE_APROVADA] Cliente: {nome} | Telefone: {telefone}
+Se o cliente pedir alterações, inclua ao final: [ARTE_REVISAO] Cliente: {nome} | Telefone: {telefone} | Alteracao: {descricao do que o cliente pediu}
 
 CATÁLOGO E PORTFÓLIO:
 
@@ -58,10 +60,18 @@ ARTE:
 
 Produtos de impressão (adesivo, lona, banner, tecido, canvas, fotográfico, papel, jateado, preto fosco, perfurado, cartão, flyer) sempre precisam de arte para produção. Para esses produtos, solicite a arte em qualquer caminho — mesmo que o cliente não tenha medidas. Diga: "Você pode enviar a arte aqui pelo WhatsApp, mesmo que ainda não tenha as medidas definidas."
 Não calcule estimativa de impressão sem ter pelo menos uma referência de tamanho da arte.
+Quando o cliente responder sobre uma arte recebida (aprovando ou pedindo alterações), emita a tag correspondente acima.
 
-TRÊS CAMINHOS DE ATENDIMENTO:
+QUATRO CAMINHOS DE ATENDIMENTO:
 
 Identifique o perfil do cliente e siga o caminho correspondente.
+
+CAMINHO 0 — CLIENTE PEDE VISITA TÉCNICA DIRETAMENTE:
+Use quando o cliente já sabe que precisa de visita técnica e pede isso explicitamente.
+1. Cumprimente.
+2. Pergunte o produto brevemente (em uma frase).
+3. Peça uma foto do local (opcional, mas incentive: "Se puder enviar uma foto do local, ajuda bastante.").
+4. Vá direto para o agendamento — use o mesmo fluxo do Caminho 3 a partir do passo de coletar endereço e dados.
 
 CAMINHO 1 — CLIENTE COM ARTE E MEDIDAS:
 Use quando o cliente já tem a arte e sabe as medidas.
@@ -96,18 +106,22 @@ Ao final, inclua EXATAMENTE esta linha:
 [LEAD_CAPTURADO] Tipo: consultoria | Nome: {nome} | Empresa: {empresa} | Telefone: {telefone} | Produto: {produto} | Estimativa: {valor ou "a definir"}
 
 CAMINHO 3 — VISITA TÉCNICA:
-Use quando o produto for instalação, placa grande, ACM ou acrílico.
+Use quando o produto for instalação, placa grande, ACM ou acrílico, ou quando o cliente pedir visita (use Caminho 0 nesse caso).
 1. Cumprimente e entenda o produto.
 2. Informe que esse tipo de serviço requer uma visita técnica antes da produção.
 3. Colete o endereço completo do local.
-4. Solicite os dados de contato e a data em uma única mensagem numerada:
+4. Se já tiver os dados do cliente (nome, empresa, telefone), confirme-os em vez de perguntar novamente. Pergunte apenas o que estiver faltando. Solicite sempre a data:
+"Confirmo seus dados: Nome: {nome} | Empresa: {empresa} | Telefone: {telefone}. Está correto?
+Qual a data e horário de preferência para a visita?"
+Se não tiver os dados, solicite tudo em uma mensagem numerada:
 "Preciso de mais algumas informações:
 1. Nome completo
 2. Nome da empresa ou estabelecimento
 3. Telefone
-4. Data e horário de preferência para a visita (segunda a sexta, das 9h às 18h, com no mínimo 24h de antecedência)"
-5. Confirme os dados com a data completa no formato: dia da semana, dia/mês/ano e horário. Exemplo: "Visita registrada para terça-feira, dia 20/05/2026, às 14h."
-6. Informe que o time estará aguardando na visita.
+4. Data e horário de preferência para a visita"
+5. Horários disponíveis para visita: segunda a sexta, das 8h às 10h ou das 16h às 18h, com no mínimo 24h de antecedência. Se o cliente sugerir horário fora dessas janelas, informe os horários disponíveis e peça nova sugestão.
+6. Confirme os dados com a data completa no formato: dia da semana, dia/mês/ano e horário. Exemplo: "Visita registrada para terça-feira, dia 20/05/2026, às 9h."
+7. Informe que o time estará aguardando na visita.
 Ao final, inclua EXATAMENTE esta linha:
 [VISITA_SOLICITADA] Nome: {nome} | Empresa: {empresa} | Telefone: {telefone} | Endereço: {endereco} | Produto: {produto} | Estimativa: {valor} | Data: {data} | Horario: {horario}
 
@@ -116,7 +130,10 @@ REGRAS DE PREÇO:
 - Sempre utilize os preços de cliente final. Somente aplique os preços de revenda se o próprio cliente mencionar que é revendedor.
 - Nunca mencione o preço por metro quadrado.
 - Nunca explique a fórmula de cálculo.
-- Apresente apenas o valor total estimado. Exemplo: "A estimativa é de R$ 360,00."
+- Regra de estimativa:
+  - Se o valor calculado for até R$ 500,00 e não houver instalação: informe o valor exato. Exemplo: "A estimativa é de R$ 360,00."
+  - Se houver instalação no serviço: informe sempre em margem. Exemplo: "A estimativa fica entre R$ 280,00 e R$ 350,00."
+  - Se o valor calculado for acima de R$ 500,00 sem instalação: não informe o valor. Diga: "Para esse tamanho, o consultor vai precisar avaliar para passar um orçamento preciso."
 - Deixe claro que é uma estimativa e que o valor final é confirmado pelo time.
 - Nunca negocie preços. Se o cliente pedir desconto: "Os valores são tabelados, mas o consultor pode verificar condições especiais para você."
 - Nunca informe prazos exatos. Diga: "O prazo é confirmado pelo time após a análise do pedido."
@@ -197,9 +214,11 @@ async function initDb() {
       phone      TEXT PRIMARY KEY,
       nome       TEXT,
       empresa    TEXT,
+      endereco   TEXT,
       updated_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+  await db.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS endereco TEXT`);
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS visitas (
@@ -224,15 +243,19 @@ async function getHistory(userId) {
 }
 
 async function getCliente(phone) {
-  const res = await db.query(`SELECT nome, empresa FROM clientes WHERE phone = $1`, [phone]);
+  const res = await db.query(`SELECT nome, empresa, endereco FROM clientes WHERE phone = $1`, [phone]);
   return res.rows[0] || null;
 }
 
-async function upsertCliente(phone, nome, empresa) {
+async function upsertCliente(phone, nome, empresa, endereco = null) {
   await db.query(
-    `INSERT INTO clientes (phone, nome, empresa) VALUES ($1, $2, $3)
-     ON CONFLICT (phone) DO UPDATE SET nome = $2, empresa = $3, updated_at = NOW()`,
-    [phone, nome, empresa]
+    `INSERT INTO clientes (phone, nome, empresa, endereco) VALUES ($1, $2, $3, $4)
+     ON CONFLICT (phone) DO UPDATE SET
+       nome     = COALESCE($2, clientes.nome),
+       empresa  = COALESCE($3, clientes.empresa),
+       endereco = COALESCE($4, clientes.endereco),
+       updated_at = NOW()`,
+    [phone, nome, empresa, endereco]
   );
 }
 
@@ -288,6 +311,11 @@ async function processarMensagemResponsavel(body) {
       await sendZAPIMessage(NOTIFICACOES.whatsapp_responsavel, "Mensagem vazia. Nada foi enviado.");
       return;
     }
+
+    const registroHistorico = body.image?.imageUrl
+      ? "[a equipe enviou uma imagem" + (conteudo ? " — " + conteudo : "") + "]"
+      : intro + (conteudo ? "\n\n" + conteudo : "");
+    await addToHistory(clientePhone, "assistant", registroHistorico);
 
     console.log("[RELAY] Mensagem encaminhada para cliente:", clientePhone);
     await sendZAPIMessage(NOTIFICACOES.whatsapp_responsavel, "Mensagem encaminhada para " + clientePhone + ".");
@@ -350,6 +378,8 @@ async function processarMensagensPendentes(userId) {
     const replyLimpo = reply
       .replace(/\[LEAD_CAPTURADO\].*/g, "")
       .replace(/\[VISITA_SOLICITADA\].*/g, "")
+      .replace(/\[ARTE_APROVADA\].*/g, "")
+      .replace(/\[ARTE_REVISAO\].*/g, "")
       .trim();
 
     console.log("[OLIVIA RESPONDE] " + replyLimpo);
@@ -440,9 +470,12 @@ function promptComData() {
 
 function mensagensComData(history, cliente = null) {
   const d = dataAtualStr();
-  const ctx = cliente
-    ? `[Sistema] Hoje é ${d}. Cliente recorrente identificado — Nome: ${cliente.nome} | Empresa: ${cliente.empresa}. Confirme os dados com o cliente antes de prosseguir, em vez de pedir novamente.`
-    : `[Sistema] Hoje é ${d}.`;
+  let ctx = `[Sistema] Hoje é ${d}.`;
+  if (cliente) {
+    ctx += ` Cliente recorrente identificado — Nome: ${cliente.nome} | Empresa: ${cliente.empresa}`;
+    if (cliente.endereco) ctx += ` | Endereço: ${cliente.endereco}`;
+    ctx += `. Use esses dados sem perguntar novamente. Confirme com o cliente e pergunte só o que estiver faltando.`;
+  }
   return [
     { role: "user",      content: ctx },
     { role: "assistant", content: `Entendido.` },
@@ -572,8 +605,31 @@ async function verificarGatilhos(reply, userId) {
       `Abrir conversa: https://wa.me/${foneWA}\n\n` +
       `Mensagem sugerida para confirmar no dia:\n"${msgSugerida}"`;
 
-    await upsertCliente(userId, nome, empresa);
+    await upsertCliente(userId, nome, empresa, endereco);
     await notificarResponsavel("Nova visita técnica - Comunynk", corpo);
+  }
+
+  if (reply.includes("[ARTE_APROVADA]")) {
+    const linha    = reply.match(/\[ARTE_APROVADA\](.*)/)?.[1]?.trim() || "";
+    const nome     = linha.match(/Cliente: ([^|]+)/)?.[1]?.trim()    || "Cliente";
+    const telefone = linha.match(/Telefone: ([^|]+)/)?.[1]?.trim()   || "";
+    const foneWA   = formatarTelefoneWA(telefone);
+    await notificarResponsavel(
+      "Arte aprovada pelo cliente - Comunynk",
+      `${nome} aprovou a arte. Pronto para produção.\n\nTelefone: ${telefone}\nAbrir conversa: https://wa.me/${foneWA}`
+    );
+  }
+
+  if (reply.includes("[ARTE_REVISAO]")) {
+    const linha      = reply.match(/\[ARTE_REVISAO\](.*)/)?.[1]?.trim() || "";
+    const nome       = linha.match(/Cliente: ([^|]+)/)?.[1]?.trim()       || "Cliente";
+    const telefone   = linha.match(/Telefone: ([^|]+)/)?.[1]?.trim()      || "";
+    const alteracao  = linha.match(/Alteracao: ([^|]+)/)?.[1]?.trim()     || "";
+    const foneWA     = formatarTelefoneWA(telefone);
+    await notificarResponsavel(
+      "Cliente pede alteração na arte - Comunynk",
+      `${nome} quer alterações na arte.\n\nPedido: ${alteracao}\nTelefone: ${telefone}\nAbrir conversa: https://wa.me/${foneWA}`
+    );
   }
 }
 
