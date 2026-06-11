@@ -403,7 +403,7 @@ async function processarMensagensPendentes(userId) {
     console.error("Erro ao processar mensagens:", err.response?.data || err.message);
     const tipo = err.response?.data?.error?.type;
     if (tipo === "overloaded_error") {
-      await sendZAPIMessage(userId, "Estou com instabilidade no momento. Por favor, tente novamente em alguns instantes.");
+      await sendZAPIMessage(userId, "Em breve nossa equipe vai entrar em contato com você.");
     }
   }
 }
