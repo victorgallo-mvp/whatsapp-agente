@@ -341,6 +341,31 @@ function enfileirarMensagem(userId, item) {
   );
 }
 
+async function chamarClaude(payload, tentativa = 1) {
+  try {
+    return await axios.post(
+      "https://api.anthropic.com/v1/messages",
+      payload,
+      {
+        headers: {
+          "x-api-key":         ANTHROPIC_API_KEY,
+          "anthropic-version": "2023-06-01",
+          "Content-Type":      "application/json",
+        },
+      }
+    );
+  } catch (err) {
+    const tipo = err.response?.data?.error?.type;
+    if (tipo === "overloaded_error" && tentativa < 4) {
+      const delay = tentativa * 3000;
+      console.log(`[CLAUDE] Sobrecarga — tentativa ${tentativa}/3, aguardando ${delay / 1000}s...`);
+      await new Promise(r => setTimeout(r, delay));
+      return chamarClaude(payload, tentativa + 1);
+    }
+    throw err;
+  }
+}
+
 async function processarMensagensPendentes(userId) {
   const pending = pendingMessages[userId];
   if (!pending) return;
@@ -352,22 +377,12 @@ async function processarMensagensPendentes(userId) {
     }
 
     const cliente  = await getCliente(userId);
-    const response = await axios.post(
-      "https://api.anthropic.com/v1/messages",
-      {
-        model:    "claude-sonnet-4-20250514",
-        max_tokens: 1000,
-        system:   promptComData(),
-        messages: mensagensComData(await getHistory(userId), cliente),
-      },
-      {
-        headers: {
-          "x-api-key":         ANTHROPIC_API_KEY,
-          "anthropic-version": "2023-06-01",
-          "Content-Type":      "application/json",
-        },
-      }
-    );
+    const response = await chamarClaude({
+      model:      "claude-sonnet-4-20250514",
+      max_tokens: 1000,
+      system:     promptComData(),
+      messages:   mensagensComData(await getHistory(userId), cliente),
+    });
 
     let reply = response.data.content?.[0]?.text;
     if (!reply) return;
@@ -386,6 +401,10 @@ async function processarMensagensPendentes(userId) {
     await sendZAPIMessage(userId, replyLimpo);
   } catch (err) {
     console.error("Erro ao processar mensagens:", err.response?.data || err.message);
+    const tipo = err.response?.data?.error?.type;
+    if (tipo === "overloaded_error") {
+      await sendZAPIMessage(userId, "Estou com instabilidade no momento. Por favor, tente novamente em alguns instantes.");
+    }
   }
 }
 
