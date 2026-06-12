@@ -267,7 +267,7 @@ async function initDb() {
         source_type TEXT NOT NULL,
         content     TEXT NOT NULL,
         context     TEXT,
-        embedding   vector(1024),
+        embedding   vector(512),
         metadata    JSONB DEFAULT '{}',
         created_at  TIMESTAMPTZ DEFAULT NOW()
       )
