@@ -22,6 +22,8 @@ const GOOGLE_CALENDAR_ID      = process.env.GOOGLE_CALENDAR_ID      || "";
 const GOOGLE_REDIRECT_URI     = process.env.GOOGLE_REDIRECT_URI     || "";
 const GOOGLE_REFRESH_TOKEN    = process.env.GOOGLE_REFRESH_TOKEN    || "";
 
+const VOYAGE_API_KEY = process.env.VOYAGE_API_KEY || "";
+
 const NOTIFICACOES = {
   whatsapp_responsavel: process.env.WHATSAPP_RESPONSAVEL || "PREENCHA_AQUI",
   email_responsavel:    process.env.EMAIL_RESPONSAVEL    || "PREENCHA_AQUI",
@@ -221,6 +223,29 @@ async function initDb() {
   await db.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS endereco TEXT`);
 
   await db.query(`
+    CREATE TABLE IF NOT EXISTS leads (
+      phone               TEXT PRIMARY KEY,
+      nome                TEXT,
+      empresa             TEXT,
+      endereco            TEXT,
+      stage               TEXT DEFAULT 'novo',
+      profile             JSONB DEFAULT '{}',
+      last_summary        TEXT,
+      total_interactions  INT DEFAULT 0,
+      last_interaction_at TIMESTAMPTZ,
+      profile_updated_at  TIMESTAMPTZ,
+      created_at          TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  // Migra dados existentes da tabela clientes
+  await db.query(`
+    INSERT INTO leads (phone, nome, empresa, endereco)
+    SELECT phone, nome, empresa, endereco FROM clientes
+    ON CONFLICT (phone) DO NOTHING
+  `);
+
+  await db.query(`
     CREATE TABLE IF NOT EXISTS visitas (
       id               SERIAL PRIMARY KEY,
       user_id          TEXT NOT NULL,
@@ -231,6 +256,31 @@ async function initDb() {
       created_at       TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+
+  // pgvector e base de conhecimento (opcional — requer extensão vector no Postgres)
+  try {
+    await db.query("CREATE EXTENSION IF NOT EXISTS vector");
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS knowledge_base (
+        id          SERIAL PRIMARY KEY,
+        client_id   TEXT NOT NULL DEFAULT 'comunynk',
+        source_type TEXT NOT NULL,
+        content     TEXT NOT NULL,
+        context     TEXT,
+        embedding   vector(1024),
+        metadata    JSONB DEFAULT '{}',
+        created_at  TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await db.query(`
+      CREATE INDEX IF NOT EXISTS idx_knowledge_embedding
+      ON knowledge_base USING hnsw (embedding vector_cosine_ops)
+    `);
+    console.log("[pgvector] Extensao e tabela knowledge_base prontas.");
+  } catch (err) {
+    console.warn("[pgvector] Nao disponivel — RAG desativado:", err.message);
+  }
+
   console.log("Banco de dados pronto.");
 }
 
@@ -242,20 +292,26 @@ async function getHistory(userId) {
   return res.rows.reverse();
 }
 
-async function getCliente(phone) {
-  const res = await db.query(`SELECT nome, empresa, endereco FROM clientes WHERE phone = $1`, [phone]);
+async function getLead(phone) {
+  const res = await db.query(
+    `SELECT nome, empresa, endereco, stage, profile, last_summary, total_interactions FROM leads WHERE phone = $1`,
+    [phone]
+  );
   return res.rows[0] || null;
 }
 
-async function upsertCliente(phone, nome, empresa, endereco = null) {
+async function upsertLead(phone, { nome, empresa, endereco, stage } = {}) {
   await db.query(
-    `INSERT INTO clientes (phone, nome, empresa, endereco) VALUES ($1, $2, $3, $4)
+    `INSERT INTO leads (phone, nome, empresa, endereco, stage, last_interaction_at, total_interactions)
+     VALUES ($1, $2, $3, $4, COALESCE($5, 'novo'), NOW(), 1)
      ON CONFLICT (phone) DO UPDATE SET
-       nome     = COALESCE($2, clientes.nome),
-       empresa  = COALESCE($3, clientes.empresa),
-       endereco = COALESCE($4, clientes.endereco),
-       updated_at = NOW()`,
-    [phone, nome, empresa, endereco]
+       nome                = COALESCE($2, leads.nome),
+       empresa             = COALESCE($3, leads.empresa),
+       endereco            = COALESCE($4, leads.endereco),
+       stage               = COALESCE($5, leads.stage),
+       last_interaction_at = NOW(),
+       total_interactions  = leads.total_interactions + 1`,
+    [phone, nome || null, empresa || null, endereco || null, stage || null]
   );
 }
 
@@ -264,6 +320,83 @@ async function addToHistory(userId, role, content) {
     `INSERT INTO mensagens (user_id, role, content) VALUES ($1, $2, $3)`,
     [userId, role, content]
   );
+}
+
+// ─── BRAIN: RAG + PERFIL DE LEAD ─────────────────────────────────────────────
+async function gerarEmbedding(texto) {
+  const res = await axios.post(
+    "https://api.voyageai.com/v1/embeddings",
+    { model: "voyage-3-lite", input: [texto] },
+    { headers: { Authorization: "Bearer " + VOYAGE_API_KEY, "Content-Type": "application/json" } }
+  );
+  return res.data.data[0].embedding;
+}
+
+async function buscarConhecimento(mensagem, topK = 4) {
+  if (!VOYAGE_API_KEY) return [];
+  try {
+    const emb    = await gerarEmbedding(mensagem);
+    const embStr = "[" + emb.join(",") + "]";
+    const res    = await db.query(
+      `SELECT content, context, source_type,
+              1 - (embedding <=> $1::vector) AS similarity
+       FROM knowledge_base
+       WHERE client_id = 'comunynk'
+         AND 1 - (embedding <=> $1::vector) >= 0.6
+       ORDER BY similarity DESC
+       LIMIT $2`,
+      [embStr, topK]
+    );
+    return res.rows;
+  } catch (err) {
+    console.error("[RAG] Erro ao buscar conhecimento:", err.message);
+    return [];
+  }
+}
+
+async function atualizarPerfilLead(phone) {
+  try {
+    const history = await getHistory(phone);
+    if (history.length < 3) return;
+    const conversa = history.map(m => m.role + ": " + m.content).join("\n");
+    const res = await chamarClaude({
+      model:      "claude-haiku-4-5-20251001",
+      max_tokens: 400,
+      system:     "Você é um analista de leads de uma empresa de impressão e comunicação visual. Extraia informações estruturadas em JSON com base na conversa.",
+      messages:   [{ role: "user", content: `Analise a conversa e extraia as informações em JSON:\n{\n  "interesse_principal": "...",\n  "produto_interesse": "...",\n  "orcamento_estimado": "...",\n  "objecoes": "...",\n  "resumo": "..."\n}\n\nConversa:\n${conversa}` }],
+    });
+    const texto     = res.data.content?.[0]?.text || "";
+    const jsonMatch = texto.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const perfil = JSON.parse(jsonMatch[0]);
+      await db.query(
+        `UPDATE leads SET profile = profile || $2, last_summary = $3, profile_updated_at = NOW() WHERE phone = $1`,
+        [phone, JSON.stringify(perfil), perfil.resumo || null]
+      );
+      console.log("[BRAIN] Perfil atualizado para:", phone);
+    }
+  } catch (err) {
+    console.error("[BRAIN] Erro ao atualizar perfil:", err.message);
+  }
+}
+
+async function verificarAtualizacaoPerfil(phone) {
+  try {
+    const res = await db.query(
+      `SELECT profile_updated_at, total_interactions FROM leads WHERE phone = $1`,
+      [phone]
+    );
+    if (!res.rows[0]) return;
+    const { profile_updated_at, total_interactions } = res.rows[0];
+    if (total_interactions < 3) return;
+    const ultimaAtt        = profile_updated_at ? new Date(profile_updated_at).getTime() : 0;
+    const VINTE_QUATRO_H   = 24 * 60 * 60 * 1000;
+    if (Date.now() - ultimaAtt >= VINTE_QUATRO_H) {
+      atualizarPerfilLead(phone); // fire and forget
+    }
+  } catch (err) {
+    console.error("[BRAIN] Erro ao verificar perfil:", err.message);
+  }
 }
 
 // ─── RELAY DO RESPONSÁVEL ────────────────────────────────────────────────────
@@ -376,12 +509,21 @@ async function processarMensagensPendentes(userId) {
       await addToHistory(userId, "user", item.content);
     }
 
-    const cliente  = await getCliente(userId);
+    const queryText = pending.items.map(i => i.content).join(" ");
+    const [lead, knowledge] = await Promise.all([
+      getLead(userId),
+      buscarConhecimento(queryText),
+    ]);
+
+    if (knowledge.length > 0) {
+      console.log("[RAG] " + knowledge.length + " resultado(s) encontrado(s) para:", queryText.substring(0, 60));
+    }
+
     const response = await chamarClaude({
       model:      "claude-sonnet-4-20250514",
       max_tokens: 1000,
       system:     promptComData(),
-      messages:   mensagensComData(await getHistory(userId), cliente),
+      messages:   mensagensComData(await getHistory(userId), lead, knowledge),
     });
 
     let reply = response.data.content?.[0]?.text;
@@ -399,6 +541,10 @@ async function processarMensagensPendentes(userId) {
 
     console.log("[OLIVIA RESPONDE] " + replyLimpo);
     await sendZAPIMessage(userId, replyLimpo);
+
+    // Atualiza contagem de interações e verifica se perfil precisa de update
+    upsertLead(userId, {}).catch(() => {});
+    verificarAtualizacaoPerfil(userId);
   } catch (err) {
     console.error("Erro ao processar mensagens:", err.response?.data || err.message);
     const tipo = err.response?.data?.error?.type;
@@ -487,13 +633,23 @@ function promptComData() {
          `\n\nLEMBRETE FINAL: hoje é ${d}. Qualquer data de visita deve ser calculada a partir daqui.`;
 }
 
-function mensagensComData(history, cliente = null) {
+function mensagensComData(history, lead = null, knowledge = []) {
   const d = dataAtualStr();
   let ctx = `[Sistema] Hoje é ${d}.`;
-  if (cliente) {
-    ctx += ` Cliente recorrente identificado — Nome: ${cliente.nome} | Empresa: ${cliente.empresa}`;
-    if (cliente.endereco) ctx += ` | Endereço: ${cliente.endereco}`;
+  if (lead) {
+    ctx += ` Cliente identificado — Nome: ${lead.nome || "desconhecido"} | Empresa: ${lead.empresa || "desconhecida"}`;
+    if (lead.endereco)     ctx += ` | Endereço: ${lead.endereco}`;
+    if (lead.stage)        ctx += ` | Etapa: ${lead.stage}`;
+    if (lead.last_summary) ctx += ` | Contexto anterior: ${lead.last_summary}`;
     ctx += `. Use esses dados sem perguntar novamente. Confirme com o cliente e pergunte só o que estiver faltando.`;
+  }
+  if (knowledge.length > 0) {
+    ctx += `\n\n[Conhecimento relevante]:\n`;
+    knowledge.forEach(k => {
+      ctx += `- ${k.content}`;
+      if (k.context) ctx += ` (${k.context})`;
+      ctx += "\n";
+    });
   }
   return [
     { role: "user",      content: ctx },
@@ -560,7 +716,7 @@ async function verificarGatilhos(reply, userId) {
       `Abrir conversa: https://wa.me/${foneWA}\n\n` +
       `Mensagem sugerida:\n"${msgSugerida}"`;
 
-    await upsertCliente(userId, nome, empresa);
+    await upsertLead(userId, { nome, empresa, stage: "qualificado" });
     await notificarResponsavel(assunto, corpo);
 
     const arteUrl = artes[userId];
@@ -624,7 +780,7 @@ async function verificarGatilhos(reply, userId) {
       `Abrir conversa: https://wa.me/${foneWA}\n\n` +
       `Mensagem sugerida para confirmar no dia:\n"${msgSugerida}"`;
 
-    await upsertCliente(userId, nome, empresa, endereco);
+    await upsertLead(userId, { nome, empresa, endereco, stage: "qualificando" });
     await notificarResponsavel("Nova visita técnica - Comunynk", corpo);
   }
 
@@ -782,6 +938,26 @@ async function notificarResponsavel(assunto, corpo) {
     console.log("[NOTIFICACAO - WHATSAPP NAO CONFIGURADO] " + assunto);
   }
 }
+
+// ─── ADMIN: INDEXAR BASE DE CONHECIMENTO ─────────────────────────────────────
+app.post("/admin/knowledge", async (req, res) => {
+  const { content, context, source_type = "faq" } = req.body;
+  if (!content) return res.status(400).json({ error: "content obrigatorio" });
+  if (!VOYAGE_API_KEY) return res.status(503).json({ error: "VOYAGE_API_KEY nao configurado" });
+  try {
+    const embedding = await gerarEmbedding(content);
+    const embStr    = "[" + embedding.join(",") + "]";
+    await db.query(
+      `INSERT INTO knowledge_base (source_type, content, context, embedding) VALUES ($1, $2, $3, $4::vector)`,
+      [source_type, content, context || null, embStr]
+    );
+    console.log("[KNOWLEDGE] Indexado:", source_type, "|", content.substring(0, 60));
+    res.json({ ok: true, source_type, preview: content.substring(0, 80) });
+  } catch (err) {
+    console.error("[KNOWLEDGE] Erro:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // ─── OAUTH GOOGLE (gerar refresh token uma única vez) ────────────────────────
 app.get("/auth", (req, res) => {
