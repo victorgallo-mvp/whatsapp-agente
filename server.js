@@ -368,7 +368,8 @@ async function atualizarPerfilLead(phone) {
     const texto     = res.data.content?.[0]?.text || "";
     const jsonMatch = texto.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
-      const perfil = JSON.parse(jsonMatch[0]);
+      const jsonLimpo = jsonMatch[0].replace(/[\r\n]+/g, " ").replace(/,\s*}/g, "}");
+      const perfil = JSON.parse(jsonLimpo);
       await db.query(
         `UPDATE leads SET profile = profile || $2, last_summary = $3, profile_updated_at = NOW() WHERE phone = $1`,
         [phone, JSON.stringify(perfil), perfil.resumo || null]
