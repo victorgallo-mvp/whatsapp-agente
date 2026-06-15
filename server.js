@@ -544,7 +544,7 @@ async function processarMensagensPendentes(userId) {
     }
 
     const response = await chamarClaude({
-      model:      "claude-sonnet-4-20250514",
+      model:      "claude-sonnet-4-6",
       max_tokens: 1000,
       system:     promptComData(),
       messages:   mensagensComData(await getHistory(userId), lead, knowledge),
