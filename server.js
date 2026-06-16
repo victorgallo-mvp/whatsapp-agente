@@ -345,6 +345,43 @@ async function addToHistory(userId, role, content) {
   );
 }
 
+// ─── VISÃO: ANÁLISE DE IMAGENS COM CLAUDE ────────────────────────────────────
+async function analisarImagem(imageUrl) {
+  try {
+    const imgRes   = await axios.get(imageUrl, { responseType: "arraybuffer", timeout: 15000 });
+    const base64   = Buffer.from(imgRes.data).toString("base64");
+    const mediaType = (imgRes.headers["content-type"] || "image/jpeg").split(";")[0].trim();
+    const tiposSuportados = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+    if (!tiposSuportados.includes(mediaType)) return null;
+
+    const res = await axios.post(
+      "https://api.anthropic.com/v1/messages",
+      {
+        model:      "claude-haiku-4-5-20251001",
+        max_tokens: 300,
+        messages:   [{
+          role:    "user",
+          content: [
+            { type: "image", source: { type: "base64", media_type: mediaType, data: base64 } },
+            { type: "text",  text: "Analise esta imagem no contexto de uma empresa de impressão e comunicação visual. Descreva em até 3 linhas: tipo de imagem (arte finalizada para impressão, foto de local para instalação, imagem de referência, logotipo, etc.), características relevantes como dimensões estimadas, tipo de superfície, formato ou qualidade aparente. Seja objetivo e técnico. Responda em português." }
+          ]
+        }]
+      },
+      {
+        headers: {
+          "x-api-key":         ANTHROPIC_API_KEY,
+          "anthropic-version": "2023-06-01",
+          "Content-Type":      "application/json",
+        },
+      }
+    );
+    return res.data.content?.[0]?.text || null;
+  } catch (err) {
+    console.error("[VISION] Erro ao analisar imagem:", err.response?.data || err.message);
+    return null;
+  }
+}
+
 // ─── BRAIN: RAG + PERFIL DE LEAD ─────────────────────────────────────────────
 async function gerarEmbedding(texto) {
   const res = await axios.post(
@@ -617,11 +654,22 @@ app.post("/webhook", async (req, res) => {
 
     const userId = body.phone;
 
-    // Imagem: enfileira com o texto representativo
+    // Imagem: analisa com Claude Vision e enfileira com descrição
     if (body.image) {
       const caption = body.image.caption ? " — legenda: " + body.image.caption : "";
       if (body.image.imageUrl) artes[userId] = body.image.imageUrl;
-      enfileirarMensagem(userId, { content: "[o cliente enviou uma imagem" + caption + "]" });
+
+      let descricao = "";
+      if (body.image.imageUrl) {
+        console.log("[VISION] Analisando imagem de:", userId);
+        const analise = await analisarImagem(body.image.imageUrl);
+        if (analise) {
+          descricao = " — análise: " + analise;
+          console.log("[VISION] Resultado:", analise.substring(0, 100));
+        }
+      }
+
+      enfileirarMensagem(userId, { content: "[o cliente enviou uma imagem" + caption + descricao + "]" });
       return;
     }
 
