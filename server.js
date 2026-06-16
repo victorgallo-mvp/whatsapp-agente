@@ -534,20 +534,27 @@ async function processarMensagensPendentes(userId) {
     }
 
     const queryText = pending.items.map(i => i.content).join(" ");
-    const [lead, knowledge] = await Promise.all([
+    const KEYWORDS_AGENDA = ["visita", "horário", "horario", "agendar", "disponível", "disponivel", "agenda", "data"];
+    const ehAgendamento   = KEYWORDS_AGENDA.some(k => queryText.toLowerCase().includes(k));
+
+    const [lead, knowledge, slots] = await Promise.all([
       getLead(userId),
       buscarConhecimento(queryText),
+      ehAgendamento ? buscarSlotsDisponiveis(5) : Promise.resolve(null),
     ]);
 
     if (knowledge.length > 0) {
-      console.log("[RAG] " + knowledge.length + " resultado(s) encontrado(s) para:", queryText.substring(0, 60));
+      console.log("[RAG] " + knowledge.length + " resultado(s) para:", queryText.substring(0, 60));
+    }
+    if (slots) {
+      console.log("[CALENDAR] Slots injetados:", slots.map(s => s.data + " " + s.horarios.join("/")).join(" | "));
     }
 
     const response = await chamarClaude({
       model:      "claude-sonnet-4-6",
       max_tokens: 1000,
       system:     promptComData(),
-      messages:   mensagensComData(await getHistory(userId), lead, knowledge),
+      messages:   mensagensComData(await getHistory(userId), lead, knowledge, slots),
     });
 
     let reply = response.data.content?.[0]?.text;
@@ -657,7 +664,7 @@ function promptComData() {
          `\n\nLEMBRETE FINAL: hoje é ${d}. Qualquer data de visita deve ser calculada a partir daqui.`;
 }
 
-function mensagensComData(history, lead = null, knowledge = []) {
+function mensagensComData(history, lead = null, knowledge = [], slots = null) {
   const d = dataAtualStr();
   let ctx = `[Sistema] Hoje é ${d}.`;
   if (lead) {
@@ -674,6 +681,13 @@ function mensagensComData(history, lead = null, knowledge = []) {
       if (k.context) ctx += ` (${k.context})`;
       ctx += "\n";
     });
+  }
+  if (slots && slots.length > 0) {
+    ctx += `\n\n[Horários disponíveis para visita técnica]:\n`;
+    slots.forEach(s => { ctx += `- ${s.data}: ${s.horarios.join(", ")}\n`; });
+    ctx += `Ofereça apenas esses horários ao cliente. Não confirme datas ou horários fora desta lista.`;
+  } else if (slots !== null && slots.length === 0) {
+    ctx += `\n\n[Horários disponíveis para visita técnica]: nenhum horário disponível nos próximos dias. Informe ao cliente que a equipe vai entrar em contato para agendar.`;
   }
   return [
     { role: "user",      content: ctx },
@@ -779,6 +793,14 @@ async function verificarGatilhos(reply, userId) {
     console.log("[GOOGLE CALENDAR] ENABLED:", GOOGLE_CALENDAR_ENABLED, "| REFRESH_TOKEN:", GOOGLE_REFRESH_TOKEN ? "OK" : "AUSENTE");
 
     if (GOOGLE_CALENDAR_ENABLED) {
+      const disponivel = await slotEstaDisponivel(dataStr, horario);
+      if (!disponivel) {
+        console.log("[CALENDAR] Slot indisponivel — solicitando reagendamento ao cliente");
+        await sendZAPIMessage(userId,
+          `O horário das ${horario} em ${dataStr} acabou de ser ocupado. Pode me informar outro horário de preferência? Os horários disponíveis são segunda a sexta, das 8h às 10h ou das 16h às 18h.`
+        );
+        return;
+      }
       await criarEventoCalendar(linha);
     }
 
@@ -833,6 +855,111 @@ async function verificarGatilhos(reply, userId) {
 }
 
 // ─── GOOGLE CALENDAR ──────────────────────────────────────────────────────────
+async function buscarAccessToken() {
+  const res = await axios.post(
+    "https://oauth2.googleapis.com/token",
+    new URLSearchParams({
+      client_id:     GOOGLE_CLIENT_ID,
+      client_secret: GOOGLE_CLIENT_SECRET,
+      refresh_token: GOOGLE_REFRESH_TOKEN,
+      grant_type:    "refresh_token",
+    }).toString(),
+    { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
+  );
+  return res.data.access_token;
+}
+
+function horaEmSP(isoStr) {
+  const d    = new Date(isoStr);
+  const spStr = d.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" });
+  return new Date(spStr).getHours();
+}
+
+function slotOcupado(hora, busyPeriods) {
+  return busyPeriods.some(b => {
+    const bStart = horaEmSP(b.start);
+    const bEnd   = horaEmSP(b.end);
+    return bStart < hora + 1 && bEnd > hora;
+  });
+}
+
+async function buscarSlotsBloqueados(data, accessToken) {
+  const p     = n => String(n).padStart(2, "0");
+  const ano   = data.getFullYear();
+  const mes   = p(data.getMonth() + 1);
+  const dia   = p(data.getDate());
+  const calId = GOOGLE_CALENDAR_ID || "primary";
+  const res   = await axios.post(
+    "https://www.googleapis.com/calendar/v3/freeBusy",
+    {
+      timeMin:  `${ano}-${mes}-${dia}T00:00:00-03:00`,
+      timeMax:  `${ano}-${mes}-${dia}T23:59:59-03:00`,
+      timeZone: "America/Sao_Paulo",
+      items:    [{ id: calId }],
+    },
+    { headers: { Authorization: "Bearer " + accessToken, "Content-Type": "application/json" } }
+  );
+  return res.data.calendars?.[calId]?.busy || [];
+}
+
+async function buscarSlotsDisponiveis(diasAFrente = 5) {
+  if (!GOOGLE_CALENDAR_ENABLED || !GOOGLE_REFRESH_TOKEN) return null;
+  try {
+    const accessToken = await buscarAccessToken();
+    const SLOTS_DIA   = [8, 9, 16, 17];
+    const dias        = ["domingo","segunda-feira","terça-feira","quarta-feira","quinta-feira","sexta-feira","sábado"];
+    const agora       = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+    const resultado   = [];
+    let verificados = 0, contados = 0;
+
+    while (contados < diasAFrente && verificados < 20) {
+      verificados++;
+      const data = new Date(agora);
+      data.setDate(data.getDate() + verificados);
+      const dow = data.getDay();
+      if (dow === 0 || dow === 6) continue;
+      contados++;
+
+      const busy   = await buscarSlotsBloqueados(data, accessToken);
+      const livres = SLOTS_DIA.filter(h => !slotOcupado(h, busy));
+      if (livres.length > 0) {
+        const p   = n => String(n).padStart(2, "0");
+        resultado.push({
+          data:     `${dias[dow]}, ${data.getDate()}/${p(data.getMonth() + 1)}`,
+          horarios: livres.map(h => h + "h"),
+        });
+      }
+    }
+    return resultado;
+  } catch (err) {
+    console.error("[CALENDAR] Erro ao buscar disponibilidade:", err.message);
+    return null;
+  }
+}
+
+async function slotEstaDisponivel(dataStr, horarioStr) {
+  if (!GOOGLE_CALENDAR_ENABLED || !GOOGLE_REFRESH_TOKEN) return true;
+  try {
+    const accessToken = await buscarAccessToken();
+    const hoje        = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+    const matchData   = dataStr.match(/(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?/);
+    if (!matchData) return true;
+    const dia  = parseInt(matchData[1]);
+    const mes  = parseInt(matchData[2]) - 1;
+    const ano  = matchData[3] ? parseInt(matchData[3].length === 2 ? "20" + matchData[3] : matchData[3]) : hoje.getFullYear();
+    const data = new Date(ano, mes, dia);
+    const matchHora = horarioStr.match(/(\d{1,2})[h:]/);
+    const hora = matchHora ? parseInt(matchHora[1]) : 9;
+    const busy = await buscarSlotsBloqueados(data, accessToken);
+    const ocupado = slotOcupado(hora, busy);
+    console.log("[CALENDAR] Slot", horarioStr, dataStr, "| ocupado:", ocupado);
+    return !ocupado;
+  } catch (err) {
+    console.error("[CALENDAR] Erro ao verificar slot:", err.message);
+    return true;
+  }
+}
+
 async function criarEventoCalendar(dadosVisita) {
   if (!GOOGLE_CALENDAR_ENABLED) return;
   if (!GOOGLE_REFRESH_TOKEN) {
@@ -841,18 +968,7 @@ async function criarEventoCalendar(dadosVisita) {
   }
 
   try {
-    const tokenRes = await axios.post(
-      "https://oauth2.googleapis.com/token",
-      new URLSearchParams({
-        client_id:     GOOGLE_CLIENT_ID,
-        client_secret: GOOGLE_CLIENT_SECRET,
-        refresh_token: GOOGLE_REFRESH_TOKEN,
-        grant_type:    "refresh_token",
-      }).toString(),
-      { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
-    );
-
-    const accessToken = tokenRes.data.access_token;
+    const accessToken = await buscarAccessToken();
 
     const nome     = dadosVisita.match(/Nome: ([^|]+)/)?.[1]?.trim()     || "Cliente";
     const endereco = dadosVisita.match(/Endereço: ([^|]+)/)?.[1]?.trim() || "";
