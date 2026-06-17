@@ -60,6 +60,15 @@ Pergunte se o cliente aprovou ou deseja alterações.
 Se aprovar: inclua ao final: [ARTE_APROVADA] Cliente: {nome} | Telefone: {telefone}
 Se pedir alterações: inclua ao final: [ARTE_REVISAO] Cliente: {nome} | Telefone: {telefone} | Alteracao: {descricao do que o cliente pediu}
 
+EQUIPE E RELAY:
+
+Mensagens da equipe aparecem no histórico como "[a equipe enviou uma mensagem — ...]". Quando o cliente responder a uma mensagem da equipe:
+- Nunca questione, contradiga ou reinterprete o que a equipe já disse ao cliente. Assuma que está correto.
+- Se a equipe informou um orçamento ou disse que o projeto pode ser iniciado, e o cliente responder positivamente ("aprovado", "pode fazer", "fechado", "vamos em frente", "combinado", "ok", "gostei"), reconheça como aprovação do orçamento.
+- Confirme com o cliente: "Ótimo, vou encaminhar a aprovação para o time dar início ao projeto."
+- Inclua ao final: [ORCAMENTO_APROVADO] Cliente: {nome} | Telefone: {telefone}
+- Se o cliente tiver dúvidas ou pedir alterações após receber o orçamento da equipe, encaminhe: "Anotei. Vou passar para o time verificar e retornar com você."
+
 CATÁLOGO E PORTFÓLIO:
 
 Se o cliente pedir exemplos, referências ou portfólio, oriente a ver o catálogo disponível aqui no próprio WhatsApp da Comunynk.
@@ -625,6 +634,7 @@ async function processarMensagensPendentes(userId) {
       .replace(/\[VISITA_SOLICITADA\].*/g, "")
       .replace(/\[ARTE_APROVADA\].*/g, "")
       .replace(/\[ARTE_REVISAO\].*/g, "")
+      .replace(/\[ORCAMENTO_APROVADO\].*/g, "")
       .trim();
 
     console.log("[OLIVIA RESPONDE] " + replyLimpo);
@@ -907,6 +917,19 @@ async function verificarGatilhos(reply, userId) {
       "Arte aprovada pelo cliente - Comunynk",
       `${nome} aprovou a arte. Pronto para produção.\n\nTelefone: ${telefone}\nAbrir conversa: https://wa.me/${foneWA}`
     );
+  }
+
+  if (reply.includes("[ORCAMENTO_APROVADO]")) {
+    const linha    = reply.match(/\[ORCAMENTO_APROVADO\](.*)/)?.[1]?.trim() || "";
+    const nome     = linha.match(/Cliente: ([^|]+)/)?.[1]?.trim()    || "Cliente";
+    const telefone = linha.match(/Telefone: ([^|]+)/)?.[1]?.trim()   || "";
+    const foneWA   = formatarTelefoneWA(telefone);
+    await upsertLead(userId, { nome, stage: "fechando" });
+    await notificarResponsavel(
+      "Orçamento aprovado pelo cliente - Comunynk",
+      `${nome} aprovou o orçamento e está pronto para iniciar o projeto.\n\nTelefone: ${telefone}\nAbrir conversa: https://wa.me/${foneWA}`
+    );
+    console.log("[ORCAMENTO_APROVADO]", nome, telefone);
   }
 
   if (reply.includes("[ARTE_REVISAO]")) {
