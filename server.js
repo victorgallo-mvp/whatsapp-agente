@@ -192,6 +192,20 @@ Se não tiver, solicite tudo em uma mensagem numerada:
 Ao final, inclua EXATAMENTE esta linha:
 [VISITA_SOLICITADA] Nome: {nome} | Empresa: {empresa} | Telefone: {telefone} | Endereço: {endereco} | Produto: {produto} | Estimativa: {valor} | Data: {data} | Horario: {horario}
 
+REAGENDAMENTO E CANCELAMENTO DE VISITA:
+
+Se o cliente quiser reagendar uma visita já confirmada:
+1. Pergunte a nova data e horário preferidos se ainda não informados.
+2. Confirme o reagendamento com dia da semana, data completa e horário.
+3. Ao final, inclua EXATAMENTE esta linha:
+[VISITA_REAGENDADA] Nome: {nome} | Telefone: {telefone} | Data: {data} | Horario: {horario}
+
+Se o cliente quiser cancelar uma visita:
+1. Confirme o cancelamento de forma cordial.
+2. Informe que a equipe será avisada.
+3. Ao final, inclua EXATAMENTE esta linha:
+[VISITA_CANCELADA] Nome: {nome} | Telefone: {telefone}
+
 REGRAS DE PREÇO:
 
 - Sempre utilize os preços de cliente final. Somente aplique os preços de revenda se o próprio cliente mencionar que é revendedor.
@@ -318,9 +332,11 @@ async function initDb() {
       data_visita      DATE,
       horario          TEXT,
       lembrete_enviado BOOLEAN DEFAULT FALSE,
+      cancelado        BOOLEAN DEFAULT FALSE,
       created_at       TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+  await db.query(`ALTER TABLE visitas ADD COLUMN IF NOT EXISTS cancelado BOOLEAN DEFAULT FALSE`);
 
   // pgvector e base de conhecimento (opcional — requer extensão vector no Postgres)
   try {
@@ -567,8 +583,10 @@ async function processarMensagemResponsavel(body) {
 }
 
 // ─── DEBOUNCE DE MENSAGENS ───────────────────────────────────────────────────
-const pendingMessages = {};
-const DEBOUNCE_MS = 3500;
+const pendingMessages   = {};
+const lastResponseTime  = {};
+const DEBOUNCE_MS       = 5000;
+const POST_RESPONSE_MS  = 5000;
 
 function enfileirarMensagem(userId, item) {
   if (!pendingMessages[userId]) {
@@ -576,9 +594,15 @@ function enfileirarMensagem(userId, item) {
   }
   pendingMessages[userId].items.push(item);
   clearTimeout(pendingMessages[userId].timer);
+
+  const sinceLastResponse = Date.now() - (lastResponseTime[userId] || 0);
+  const delay = sinceLastResponse < POST_RESPONSE_MS
+    ? (POST_RESPONSE_MS - sinceLastResponse) + DEBOUNCE_MS
+    : DEBOUNCE_MS;
+
   pendingMessages[userId].timer = setTimeout(
     () => processarMensagensPendentes(userId),
-    DEBOUNCE_MS
+    delay
   );
 }
 
@@ -645,7 +669,7 @@ async function processarMensagensPendentes(userId) {
     if (!reply) return;
 
     await addToHistory(userId, "assistant", reply);
-    await verificarGatilhos(reply, userId);
+    const conflito = await verificarGatilhos(reply, userId);
 
     const replyLimpo = reply
       .replace(/\[LEAD_CAPTURADO\].*/g, "")
@@ -653,10 +677,15 @@ async function processarMensagensPendentes(userId) {
       .replace(/\[ARTE_APROVADA\].*/g, "")
       .replace(/\[ARTE_REVISAO\].*/g, "")
       .replace(/\[ORCAMENTO_APROVADO\].*/g, "")
+      .replace(/\[VISITA_REAGENDADA\].*/g, "")
+      .replace(/\[VISITA_CANCELADA\].*/g, "")
       .trim();
 
-    console.log("[OLIVIA RESPONDE] " + replyLimpo);
-    await sendZAPIMessage(userId, replyLimpo);
+    if (!conflito) {
+      console.log("[OLIVIA RESPONDE] " + replyLimpo);
+      await sendZAPIMessage(userId, replyLimpo);
+      lastResponseTime[userId] = Date.now();
+    }
 
     // Atualiza contagem de interações e verifica se perfil precisa de update
     upsertLead(userId, {}).catch(() => {});
@@ -895,7 +924,7 @@ async function verificarGatilhos(reply, userId) {
         await sendZAPIMessage(userId,
           `O horário das ${horario} em ${dataStr} acabou de ser ocupado. Pode me informar outro horário de preferência? Os horários disponíveis são segunda a sexta, das 8h às 10h ou das 16h às 18h.`
         );
-        return;
+        return true;
       }
       await criarEventoCalendar(linha);
     }
@@ -961,6 +990,60 @@ async function verificarGatilhos(reply, userId) {
       `${nome} quer alterações na arte.\n\nPedido: ${alteracao}\nTelefone: ${telefone}\nAbrir conversa: https://wa.me/${foneWA}`
     );
   }
+
+  if (reply.includes("[VISITA_REAGENDADA]")) {
+    const linha    = reply.match(/\[VISITA_REAGENDADA\](.*)/)?.[1]?.trim() || "";
+    const nome     = linha.match(/Nome: ([^|]+)/)?.[1]?.trim()     || "Cliente";
+    const telefone = linha.match(/Telefone: ([^|]+)/)?.[1]?.trim() || "";
+    const dataStr  = linha.match(/Data: ([^|]+)/)?.[1]?.trim()     || "";
+    const horario  = linha.match(/Horario: ([^|]+)/)?.[1]?.trim()  || "";
+    const dataDB   = parsearDataParaDB(dataStr);
+    const foneWA   = formatarTelefoneWA(telefone);
+
+    if (dataDB) {
+      await db.query(
+        `UPDATE visitas SET data_visita = $1, horario = $2, lembrete_enviado = FALSE
+         WHERE user_id = $3 AND cancelado = FALSE
+         AND id = (SELECT id FROM visitas WHERE user_id = $3 AND cancelado = FALSE ORDER BY created_at DESC LIMIT 1)`,
+        [dataDB, horario, userId]
+      );
+    }
+
+    if (GOOGLE_CALENDAR_ENABLED) {
+      await deletarEventoCalendar(nome, userId);
+      await criarEventoCalendar(linha);
+    }
+
+    await notificarResponsavel(
+      "Visita técnica reagendada - Comunynk",
+      `${nome} reagendou a visita para ${dataStr} às ${horario}.\n\nTelefone: ${telefone}\nAbrir conversa: https://wa.me/${foneWA}`
+    );
+    console.log("[VISITA_REAGENDADA]", nome, dataStr, horario);
+  }
+
+  if (reply.includes("[VISITA_CANCELADA]")) {
+    const linha    = reply.match(/\[VISITA_CANCELADA\](.*)/)?.[1]?.trim() || "";
+    const nome     = linha.match(/Nome: ([^|]+)/)?.[1]?.trim()     || "Cliente";
+    const telefone = linha.match(/Telefone: ([^|]+)/)?.[1]?.trim() || "";
+    const foneWA   = formatarTelefoneWA(telefone);
+
+    await db.query(
+      `UPDATE visitas SET cancelado = TRUE WHERE user_id = $1 AND cancelado = FALSE`,
+      [userId]
+    );
+
+    if (GOOGLE_CALENDAR_ENABLED) {
+      await deletarEventoCalendar(nome, userId);
+    }
+
+    await notificarResponsavel(
+      "Visita técnica cancelada - Comunynk",
+      `${nome} cancelou a visita técnica.\n\nTelefone: ${telefone}\nAbrir conversa: https://wa.me/${foneWA}`
+    );
+    console.log("[VISITA_CANCELADA]", nome, telefone);
+  }
+
+  return false;
 }
 
 // ─── GOOGLE CALENDAR ──────────────────────────────────────────────────────────
@@ -1066,6 +1149,32 @@ async function slotEstaDisponivel(dataStr, horarioStr) {
   } catch (err) {
     console.error("[CALENDAR] Erro ao verificar slot:", err.message);
     return true;
+  }
+}
+
+async function deletarEventoCalendar(nome, userId) {
+  if (!GOOGLE_CALENDAR_ENABLED || !GOOGLE_REFRESH_TOKEN) return;
+  try {
+    const accessToken = await buscarAccessToken();
+    const calId       = GOOGLE_CALENDAR_ID || "primary";
+    const res = await axios.get(
+      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calId)}/events`,
+      {
+        params: { q: nome, orderBy: "updated", maxResults: 5 },
+        headers: { Authorization: "Bearer " + accessToken },
+      }
+    );
+    for (const evento of (res.data.items || [])) {
+      if (evento.summary?.includes(nome)) {
+        await axios.delete(
+          `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calId)}/events/${evento.id}`,
+          { headers: { Authorization: "Bearer " + accessToken } }
+        );
+        console.log("[CALENDAR] Evento deletado:", evento.summary);
+      }
+    }
+  } catch (err) {
+    console.error("[CALENDAR] Erro ao deletar evento:", err.response?.data || err.message);
   }
 }
 
