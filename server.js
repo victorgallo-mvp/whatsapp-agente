@@ -70,7 +70,8 @@ Inclua ao final: [ARTE_APROVADA] Cliente: {nome} | Telefone: {telefone}
 
 [RELAY:MENSAGEM] + resposta positiva → depende do conteúdo da mensagem da equipe:
 - Se a mensagem da equipe apresentava um orçamento, proposta de valor ou proposta de projeto para o cliente aceitar: trate como aprovação de orçamento. Confirme: "Ótimo, vou encaminhar a aprovação para o time dar início ao projeto." Inclua ao final: [ORCAMENTO_APROVADO] Cliente: {nome} | Telefone: {telefone}
-- Se a mensagem da equipe era uma pergunta sobre ajustes, preferências, medidas ou alterações: responda ao contexto da pergunta. Não presuma aprovação de orçamento.
+- Se a mensagem da equipe era uma pergunta sobre ajustes, alterações, cor, medidas ou detalhes da arte: o cliente confirmou que quer alterar. Pergunte qual é a alteração específica ("O que exatamente você quer mudar?"). Quando o cliente descrever, confirme e inclua ao final: [ARTE_REVISAO] Cliente: {nome} | Telefone: {telefone} | Alteracao: {descricao}
+- Se a mensagem da equipe era uma pergunta genérica de opinião ou satisfação: responda ao contexto naturalmente. Não presuma aprovação nem alteração.
 
 [RELAY:DOCUMENTO] + resposta positiva → cliente aceitou o documento.
 Confirme: "Anotei. Vou informar o time."
@@ -190,7 +191,7 @@ Se não tiver, solicite tudo em uma mensagem numerada:
 3. Telefone
 4. Qual desses horários funciona para você?"
 Se o cliente não tiver empresa, use "N/A" no campo empresa.
-5. Se o cliente sugerir horário fora da lista de disponíveis ou com minutos (ex: 16h15, 8h30), informe que só temos os horários exatos listados e peça nova escolha.
+5. O cliente pode sugerir qualquer horário, inclusive com minutos (ex: 16h30, 8h45). Se o horário estiver dentro de um bloco disponível (8h–10h ou 16h–18h), aceite e confirme. Se houver conflito de agenda, informe e sugira o próximo horário disponível mais próximo.
 6. Confirme com a data completa: dia da semana, dia/mês/ano e horário. Exemplo: "Visita registrada para terça-feira, dia 20/05/2026, às 9h."
 7. Informe que o time estará aguardando na visita.
 Ao final, inclua EXATAMENTE esta linha:
@@ -221,9 +222,8 @@ REGRAS DE PREÇO:
 - Nunca explique a fórmula de cálculo. Nunca revele o valor calculado. Calcule internamente e apresente apenas o resultado como estimativa.
 - Nunca diga "calculei", "o valor calculado é", "o valor estimado é X" ou semelhante. Use sempre "a estimativa fica entre".
 - Regra de estimativa (calcule internamente e aplique a regra abaixo para o que dizer ao cliente):
-  - Se o valor calculado for até R$500: informe em margem, com R$500 como teto fixo. Exemplo: calculou R$350 → diga apenas "A estimativa fica entre R$300 e R$500."
-  - Se o valor calculado for acima de R$500 sem instalação: NÃO informe nenhum valor. Diga apenas: "Para esse tamanho, o consultor precisa avaliar para passar um orçamento preciso."
-  - Se houver instalação com valor acima de R$500: informe em margem. Exemplo: "A estimativa fica entre R$600 e R$750."
+  - Se o valor calculado for menor que R$500: informe em margem, com R$500 como teto fixo. Exemplo: calculou R$350 → diga apenas "A estimativa fica entre R$300 e R$500."
+  - Se o valor calculado for igual ou acima de R$500: NÃO informe nenhum valor, independentemente de ter instalação ou não. Diga apenas: "Para esse tamanho, o consultor precisa avaliar para passar um orçamento preciso."
 - Deixe claro que é uma estimativa e que o valor final é confirmado pelo time.
 - Nunca negocie preços. Se o cliente pedir desconto: "Os valores são tabelados, mas o consultor pode verificar condições especiais para você."
 - Nunca informe prazos exatos. Diga: "O prazo é confirmado pelo time após a análise do pedido."
@@ -819,7 +819,7 @@ function mensagensComData(history, lead = null, knowledge = [], slots = null) {
   if (slots && slots.length > 0) {
     ctx += `\n\n[Horários disponíveis para visita técnica]:\n`;
     slots.forEach(s => { ctx += `- ${s.data}: ${s.horarios.join(", ")}\n`; });
-    ctx += `Ofereça apenas esses horários ao cliente. Não confirme datas ou horários fora desta lista.`;
+    ctx += `Ofereça esses horários ao cliente. O cliente pode sugerir qualquer horário com minutos dentro desses blocos (ex: 16h30 é aceito se 16h estiver disponível). Se o cliente sugerir horário fora de todos os blocos disponíveis, oriente a escolher dentro dos horários listados.`;
   } else if (slots !== null && slots.length === 0) {
     ctx += `\n\n[Horários disponíveis para visita técnica]: nenhum horário disponível nos próximos dias. Informe ao cliente que a equipe vai entrar em contato para agendar.`;
   }
@@ -1020,7 +1020,16 @@ async function verificarGatilhos(reply, userId) {
 
     if (GOOGLE_CALENDAR_ENABLED) {
       await deletarEventoCalendar(nome, userId);
-      await criarEventoCalendar(linha);
+      // Busca dados originais (endereço, produto) da visita para montar evento completo
+      const visitaOriginal = await db.query(
+        `SELECT dados FROM visitas WHERE user_id = $1 AND cancelado = FALSE ORDER BY created_at DESC LIMIT 1`,
+        [userId]
+      );
+      const dadosOriginais = visitaOriginal.rows[0]?.dados || "";
+      const endereco = dadosOriginais.match(/Endereço: ([^|]+)/)?.[1]?.trim() || "";
+      const produto  = dadosOriginais.match(/Produto: ([^|]+)/)?.[1]?.trim()  || "";
+      const linhaCompleta = `Nome: ${nome} | Endereço: ${endereco} | Produto: ${produto} | Data: ${dataStr} | Horario: ${horario}`;
+      await criarEventoCalendar(linhaCompleta);
     }
 
     await notificarResponsavel(
