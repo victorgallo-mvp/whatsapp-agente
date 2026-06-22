@@ -53,7 +53,8 @@ IMAGENS:
 Quando receber [o cliente enviou uma imagem], identifique o cenário pelo histórico da conversa:
 
 CENÁRIO 1 — Cliente enviando arte para produção (não houve arte da equipe anteriormente):
-Confirme o recebimento brevemente sem descrever o conteúdo da imagem ao cliente (a análise é apenas para uso interno). Presuma que está sendo enviado para produção. Pergunte: "Tem alguma observação antes de eu encaminhar para o time?" Se o cliente não tiver observações ou confirmar, encaminhe normalmente no fluxo.
+Confirme o recebimento brevemente sem descrever o conteúdo da imagem ao cliente (a análise é apenas para uso interno). Presuma que está sendo enviado para produção. Pergunte: "Tem alguma observação antes de eu encaminhar para o time?"
+Colete todas as observações do cliente (alterações de cor, texto, estilo, tamanho etc.) em uma ou mais trocas. Quando capturar o lead, inclua essas observações no campo Observacao do [LEAD_CAPTURADO]. Se não houver nenhuma observação, use Observacao: nenhuma.
 
 CENÁRIO 2 — Cliente respondendo a uma arte enviada pela equipe (histórico mostra [RELAY:ARTE]):
 Siga as instruções da seção EQUIPE E RELAY acima — o marcador [RELAY:ARTE] identifica que é uma arte. Não pergunte de novo se o cliente já respondeu claramente.
@@ -147,7 +148,7 @@ Se não tiver, solicite em uma única mensagem numerada:
 4. Agradeça e informe que em breve um consultor vai dar continuidade.
 Se o cliente não tiver empresa, use "N/A" no campo empresa. Não insista no nome da empresa.
 Ao final, inclua EXATAMENTE esta linha:
-[LEAD_CAPTURADO] Tipo: orcamento | Nome: {nome} | Empresa: {empresa ou N/A} | Telefone: {telefone} | Produto: {produto} | Estimativa: {valor}
+[LEAD_CAPTURADO] Tipo: orcamento | Nome: {nome} | Empresa: {empresa ou N/A} | Telefone: {telefone} | Produto: {produto} | Estimativa: {valor} | Observacao: {observacoes do cliente ou "nenhuma"}
 
 CAMINHO B — CLIENTE NÃO TEM ARTE:
 Use quando o cliente não tem arte pronta ou não mencionou ter arte.
@@ -176,7 +177,7 @@ Se não tiver, solicite em uma única mensagem numerada:
 5. Agradeça e informe que em breve um consultor vai dar continuidade.
 Se o cliente não tiver empresa, use "N/A" no campo empresa. Não insista no nome da empresa.
 Ao final, inclua EXATAMENTE esta linha:
-[LEAD_CAPTURADO] Tipo: consultoria | Nome: {nome} | Empresa: {empresa ou N/A} | Telefone: {telefone} | Produto: {produto} | Estimativa: {valor ou "a definir"}
+[LEAD_CAPTURADO] Tipo: consultoria | Nome: {nome} | Empresa: {empresa ou N/A} | Telefone: {telefone} | Produto: {produto} | Estimativa: {valor ou "a definir"} | Observacao: {observacoes do cliente ou "nenhuma"}
 
 FLUXO DE VISITA TÉCNICA:
 Use quando o produto exigir instalação e o cliente não conseguir tirar as medidas, ou quando o cliente pedir visita diretamente (Caminho 0).
@@ -859,13 +860,14 @@ function parsearDataParaDB(dataStr) {
 async function verificarGatilhos(reply, userId) {
   if (reply.includes("[LEAD_CAPTURADO]")) {
     const linha = reply.match(/\[LEAD_CAPTURADO\](.*)/)?.[1]?.trim() || "";
-    const tipo     = linha.match(/Tipo: ([^|]+)/)?.[1]?.trim()     || "orcamento";
-    const nome     = linha.match(/Nome: ([^|]+)/)?.[1]?.trim()     || "Cliente";
-    const empresa  = linha.match(/Empresa: ([^|]+)/)?.[1]?.trim()  || "";
-    const telefone = linha.match(/Telefone: ([^|]+)/)?.[1]?.trim() || "";
-    const produto  = linha.match(/Produto: ([^|]+)/)?.[1]?.trim()  || "";
+    const tipo      = linha.match(/Tipo: ([^|]+)/)?.[1]?.trim()       || "orcamento";
+    const nome      = linha.match(/Nome: ([^|]+)/)?.[1]?.trim()       || "Cliente";
+    const empresa   = linha.match(/Empresa: ([^|]+)/)?.[1]?.trim()    || "";
+    const telefone  = linha.match(/Telefone: ([^|]+)/)?.[1]?.trim()   || "";
+    const produto   = linha.match(/Produto: ([^|]+)/)?.[1]?.trim()    || "";
     const estimativa = linha.match(/Estimativa: ([^|]+)/)?.[1]?.trim() || "";
-    const foneWA   = formatarTelefoneWA(telefone);
+    const observacao = linha.match(/Observacao: ([^|]+)/)?.[1]?.trim() || "";
+    const foneWA    = formatarTelefoneWA(telefone);
 
     let assunto, intro, msgSugerida;
     if (tipo === "consultoria") {
@@ -894,12 +896,15 @@ async function verificarGatilhos(reply, userId) {
     const arteUrl = artes[userId];
     if (arteUrl && NOTIFICACOES.whatsapp_responsavel !== "PREENCHA_AQUI") {
       try {
+        const captionObs = observacao && observacao.toLowerCase() !== "nenhuma"
+          ? "\n\nObservação do cliente: " + observacao
+          : "";
         await axios.post(
           `https://api.z-api.io/instances/${ZAPI_INSTANCE_ID}/token/${ZAPI_TOKEN}/send-image`,
           {
             phone:   NOTIFICACOES.whatsapp_responsavel,
             image:   arteUrl,
-            caption: "Arte do cliente: " + nome,
+            caption: "Arte de referência do cliente: " + nome + captionObs,
           },
           { headers: { "Client-Token": ZAPI_CLIENT_TOKEN, "Content-Type": "application/json" } }
         );
@@ -998,6 +1003,23 @@ async function verificarGatilhos(reply, userId) {
       "Cliente pede alteração na arte - Comunynk",
       `${nome} quer alterações na arte.\n\nPedido: ${alteracao}\nTelefone: ${telefone}\nAbrir conversa: https://wa.me/${foneWA}`
     );
+    const arteUrl = artes[userId];
+    if (arteUrl && NOTIFICACOES.whatsapp_responsavel !== "PREENCHA_AQUI") {
+      try {
+        await axios.post(
+          `https://api.z-api.io/instances/${ZAPI_INSTANCE_ID}/token/${ZAPI_TOKEN}/send-image`,
+          {
+            phone:   NOTIFICACOES.whatsapp_responsavel,
+            image:   arteUrl,
+            caption: `Arte de ${nome} — alteração solicitada: ${alteracao}`,
+          },
+          { headers: { "Client-Token": ZAPI_CLIENT_TOKEN, "Content-Type": "application/json" } }
+        );
+        console.log("[ARTE_REVISAO] Arte encaminhada ao responsavel com descricao de alteracao.");
+      } catch (err) {
+        console.error("[ARTE_REVISAO] Erro ao encaminhar arte:", err.response?.data || err.message);
+      }
+    }
   }
 
   if (reply.includes("[VISITA_REAGENDADA]")) {
