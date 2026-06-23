@@ -53,8 +53,8 @@ IMAGENS:
 Quando receber [o cliente enviou uma imagem], identifique o cenário pelo histórico da conversa:
 
 CENÁRIO 1 — Cliente enviando arte para produção (não houve arte da equipe anteriormente):
-Confirme o recebimento brevemente sem descrever o conteúdo da imagem ao cliente (a análise é apenas para uso interno). Presuma que está sendo enviado para produção. Pergunte: "Tem alguma observação antes de eu encaminhar para o time?"
-Colete todas as observações do cliente (alterações de cor, texto, estilo, tamanho etc.) em uma ou mais trocas. Quando capturar o lead, inclua essas observações no campo Observacao do [LEAD_CAPTURADO]. Se não houver nenhuma observação, use Observacao: nenhuma.
+Confirme o recebimento brevemente sem descrever o conteúdo da imagem ao cliente (a análise é apenas para uso interno). Presuma que está sendo enviado para produção.
+Colete observações do cliente (alterações de cor, texto, estilo etc.) naturalmente ao longo da conversa — não faça uma pergunta separada só para isso. As observações serão incluídas no resumo de confirmação antes de encaminhar.
 
 CENÁRIO 2 — Cliente respondendo a uma arte enviada pela equipe (histórico mostra [RELAY:ARTE]):
 Siga as instruções da seção EQUIPE E RELAY acima — o marcador [RELAY:ARTE] identifica que é uma arte. Não pergunte de novo se o cliente já respondeu claramente.
@@ -126,16 +126,16 @@ Use quando o cliente menciona que já tem a arte pronta.
 
 TEM MEDIDAS:
 a. O produto precisa de instalação?
-   COM instalação: peça uma foto do local. Apresente estimativa em margem.
-   SEM instalação: apresente estimativa em margem.
+   COM instalação: peça uma foto do local. Calcule e aplique a regra de estimativa (REGRAS DE PREÇO).
+   SEM instalação: calcule e aplique a regra de estimativa (REGRAS DE PREÇO).
 
 SEM MEDIDAS:
 a. O produto precisa de instalação?
    COM instalação: pergunte "Você consegue tirar as medidas do local?"
-      SIM: colete as medidas, peça foto do local e apresente estimativa em margem.
+      SIM: colete as medidas, peça foto do local e aplique a regra de estimativa (REGRAS DE PREÇO).
       NÃO: siga o fluxo de visita técnica descrito abaixo.
    SEM instalação: peça uma referência de tamanho.
-      Se o cliente fornecer: apresente estimativa em margem.
+      Se o cliente fornecer: aplique a regra de estimativa (REGRAS DE PREÇO).
       Se não souber: informe que o consultor vai ajudar a definir o tamanho e o valor.
 
 3. Coleta de dados:
@@ -145,8 +145,10 @@ Se não tiver, solicite em uma única mensagem numerada:
 1. Nome completo
 2. Nome da empresa ou estabelecimento (se tiver)
 3. Telefone"
-4. Agradeça e informe que em breve um consultor vai dar continuidade.
 Se o cliente não tiver empresa, use "N/A" no campo empresa. Não insista no nome da empresa.
+4. Resumo de confirmação: após confirmar os dados, faça um resumo de tudo em uma única mensagem:
+"Antes de encaminhar, confirmo: [produto], [tamanho/medidas], [arte ou referência enviada], [observações ou alterações solicitadas]. Posso confirmar e enviar para a equipe responsável?"
+Aguarde a confirmação do cliente. Só então gere o [LEAD_CAPTURADO].
 Ao final, inclua EXATAMENTE esta linha:
 [LEAD_CAPTURADO] Tipo: orcamento | Nome: {nome} | Empresa: {empresa ou N/A} | Telefone: {telefone} | Produto: {produto} | Estimativa: {valor} | Observacao: {observacoes do cliente ou "nenhuma"}
 
@@ -159,12 +161,12 @@ Use quando o cliente não tem arte pronta ou não mencionou ter arte.
 COM instalação:
 a. Incentive o envio de foto do local: "Se puder enviar uma foto do local, ajuda bastante."
 b. Pergunte: "Você consegue tirar as medidas do local?"
-   SIM: colete as medidas e apresente estimativa em margem.
+   SIM: colete as medidas e aplique a regra de estimativa (REGRAS DE PREÇO).
    NÃO: siga o fluxo de visita técnica descrito abaixo.
 
 SEM instalação:
 a. O cliente tem medidas aproximadas?
-   SIM: apresente estimativa em margem.
+   SIM: aplique a regra de estimativa (REGRAS DE PREÇO).
    NÃO: informe que o consultor vai ajudar a definir o tamanho e o valor.
 
 4. Coleta de dados:
@@ -174,8 +176,10 @@ Se não tiver, solicite em uma única mensagem numerada:
 1. Nome completo
 2. Nome da empresa ou estabelecimento (se tiver)
 3. Telefone"
-5. Agradeça e informe que em breve um consultor vai dar continuidade.
 Se o cliente não tiver empresa, use "N/A" no campo empresa. Não insista no nome da empresa.
+5. Resumo de confirmação: após confirmar os dados, faça um resumo de tudo em uma única mensagem:
+"Antes de encaminhar, confirmo: [produto], [tamanho/medidas], [estilo, cores e referências coletadas], [observações ou alterações]. Posso confirmar e enviar para a equipe responsável?"
+Aguarde a confirmação do cliente. Só então gere o [LEAD_CAPTURADO].
 Ao final, inclua EXATAMENTE esta linha:
 [LEAD_CAPTURADO] Tipo: consultoria | Nome: {nome} | Empresa: {empresa ou N/A} | Telefone: {telefone} | Produto: {produto} | Estimativa: {valor ou "a definir"} | Observacao: {observacoes do cliente ou "nenhuma"}
 
@@ -193,7 +197,7 @@ Se não tiver, solicite tudo em uma mensagem numerada:
 4. Qual desses horários funciona para você?"
 Se o cliente não tiver empresa, use "N/A" no campo empresa.
 5. O cliente pode sugerir qualquer horário, inclusive com minutos (ex: 16h30, 8h45). Se o horário estiver dentro de um bloco disponível (8h–10h ou 16h–18h), aceite e confirme. Se houver conflito de agenda, informe e sugira o próximo horário disponível mais próximo.
-6. Confirme com a data completa: dia da semana, dia/mês/ano e horário. Exemplo: "Visita registrada para terça-feira, dia 20/05/2026, às 9h."
+6. Só confirme a visita após ter coletado TODOS os dados obrigatórios: nome, telefone, endereço completo, produto, data e horário. Não diga "visita registrada" antes disso. Quando tiver tudo, confirme com dia da semana, data completa e horário: "Visita registrada para terça-feira, dia 20/05/2026, às 9h."
 7. Informe que o time estará aguardando na visita.
 Ao final, inclua EXATAMENTE esta linha:
 [VISITA_SOLICITADA] Nome: {nome} | Empresa: {empresa} | Telefone: {telefone} | Endereço: {endereco} | Produto: {produto} | Estimativa: {valor} | Data: {data} | Horario: {horario}
@@ -595,6 +599,7 @@ async function processarMensagemResponsavel(body) {
 // ─── DEBOUNCE DE MENSAGENS ───────────────────────────────────────────────────
 const pendingMessages   = {};
 const lastResponseTime  = {};
+const processingUsers   = new Set();
 const DEBOUNCE_MS       = 5000;
 const POST_RESPONSE_MS  = 5000;
 
@@ -606,8 +611,9 @@ function enfileirarMensagem(userId, item) {
   clearTimeout(pendingMessages[userId].timer);
 
   const sinceLastResponse = Date.now() - (lastResponseTime[userId] || 0);
-  const delay = sinceLastResponse < POST_RESPONSE_MS
-    ? (POST_RESPONSE_MS - sinceLastResponse) + DEBOUNCE_MS
+  const emProcessamento   = processingUsers.has(userId);
+  const delay = (sinceLastResponse < POST_RESPONSE_MS || emProcessamento)
+    ? Math.max(POST_RESPONSE_MS - sinceLastResponse, 0) + DEBOUNCE_MS
     : DEBOUNCE_MS;
 
   pendingMessages[userId].timer = setTimeout(
@@ -642,10 +648,21 @@ async function chamarClaude(payload, tentativa = 1) {
 }
 
 async function processarMensagensPendentes(userId) {
+  if (processingUsers.has(userId)) {
+    // Já há um processamento em andamento — reagenda as mensagens pendentes
+    const existing = pendingMessages[userId];
+    if (existing) {
+      clearTimeout(existing.timer);
+      existing.timer = setTimeout(() => processarMensagensPendentes(userId), DEBOUNCE_MS);
+    }
+    return;
+  }
+
   const pending = pendingMessages[userId];
   if (!pending) return;
   delete pendingMessages[userId];
 
+  processingUsers.add(userId);
   try {
     for (const item of pending.items) {
       await addToHistory(userId, "user", item.content);
@@ -706,6 +723,8 @@ async function processarMensagensPendentes(userId) {
     if (tipo === "overloaded_error") {
       await sendZAPIMessage(userId, "Em breve nossa equipe vai entrar em contato com você.");
     }
+  } finally {
+    processingUsers.delete(userId);
   }
 }
 
@@ -733,9 +752,17 @@ app.post("/webhook", async (req, res) => {
       return;
     }
 
-    // Áudio: responde imediatamente, sem debounce
-    if (body.audio) {
+    // Áudio real (voz): audioUrl ou push-to-talk
+    if (body.audio?.audioUrl || body.audio?.ptt) {
       await sendZAPIMessage(body.phone, "Não consigo ouvir áudios por aqui. Pode me escrever o que precisa?");
+      return;
+    }
+
+    // Outras mídias não suportadas (vídeo, sticker, contato, localização, áudio sem URL)
+    if (body.video || body.sticker || body.contact || body.location || body.audio) {
+      const tipo = body.video ? "video" : body.sticker ? "sticker" : body.contact ? "contact" : body.location ? "location" : "audio";
+      console.log("[WEBHOOK] Midia nao suportada:", tipo);
+      await sendZAPIMessage(body.phone, "Não consigo processar esse tipo de mídia. Pode me escrever ou enviar uma imagem?");
       return;
     }
 
