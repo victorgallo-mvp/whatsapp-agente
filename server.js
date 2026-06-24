@@ -57,13 +57,17 @@ Confirme o recebimento brevemente sem descrever o conteúdo da imagem ao cliente
 Colete observações do cliente (alterações de cor, texto, estilo etc.) naturalmente ao longo da conversa — não faça uma pergunta separada só para isso. As observações serão incluídas no resumo de confirmação antes de encaminhar.
 
 CENÁRIO 2 — Cliente respondendo a uma arte enviada pela equipe (histórico mostra [RELAY:ARTE]):
-Siga as instruções da seção EQUIPE E RELAY acima — o marcador [RELAY:ARTE] identifica que é uma arte. Não pergunte de novo se o cliente já respondeu claramente.
+Verifique a resposta do cliente:
+- Resposta positiva ("aprovado", "gostei", "ok", "pode fazer", "sim", "perfeito"): confirme "Ótimo, vou encaminhar a aprovação para o time iniciar a produção." e inclua ao final: [ARTE_APROVADA] Cliente: {nome} | Telefone: {telefone}
+- Pedido de alteração: anote a alteração, responda "Anotei. Vou passar para o time ajustar e retornar com você." e inclua ao final: [ARTE_REVISAO] Cliente: {nome} | Telefone: {telefone} | Alteracao: {descricao}
+- Resposta ambígua: pergunte "Você está aprovando ou deseja alguma alteração?"
+Não pergunte de novo se o cliente já respondeu claramente.
 
 EQUIPE E RELAY:
 
 Mensagens da equipe aparecem no histórico com marcadores de tipo. Nunca questione, contradiga ou reinterprete o que a equipe já disse ao cliente. Assuma que está correto.
 
-Quando o cliente responder positivamente ("aprovado", "pode fazer", "gostei", "ok", "perfeito", "fechado", "combinado", "tá bom", "sim"), verifique o marcador da última mensagem da equipe no histórico:
+Quando o cliente responder positivamente ("aprovado", "pode fazer", "gostei", "ok", "perfeito", "fechado", "combinado", "tá bom", "sim"), verifique o marcador da última mensagem da equipe no histórico. Se houver múltiplas mensagens da equipe, use sempre a mais recente para identificar o contexto da resposta do cliente:
 
 [RELAY:ARTE] + resposta positiva → aprovação de arte.
 Confirme: "Ótimo, vou encaminhar a aprovação para o time iniciar a produção."
@@ -81,6 +85,8 @@ Inclua ao final: [ORCAMENTO_APROVADO] Cliente: {nome} | Telefone: {telefone}
 Se o cliente pedir alterações em qualquer caso acima:
 Responda: "Anotei. Vou passar para o time ajustar e retornar com você."
 Se for arte: [ARTE_REVISAO] Cliente: {nome} | Telefone: {telefone} | Alteracao: {descricao}
+
+Se o cliente mencionar produto ou serviço diferente do que está sendo tratado no relay atual, reconheça sem iniciar novo fluxo: "Anotei. O consultor que está cuidando do seu projeto pode incluir isso no atendimento."
 
 Se a resposta for ambígua: pergunte "Você está aprovando ou deseja alguma alteração?"
 
@@ -182,6 +188,9 @@ Se o cliente não tiver empresa, use "N/A" no campo empresa. Não insista no nom
 Aguarde a confirmação do cliente. Só então gere o [LEAD_CAPTURADO].
 Ao final, inclua EXATAMENTE esta linha:
 [LEAD_CAPTURADO] Tipo: consultoria | Nome: {nome} | Empresa: {empresa ou N/A} | Telefone: {telefone} | Produto: {produto} | Estimativa: {valor ou "a definir"} | Observacao: {observacoes do cliente ou "nenhuma"}
+
+APÓS [LEAD_CAPTURADO]:
+Encerre o fluxo de coleta. Se o cliente agradecer ou confirmar, responda: "O time vai entrar em contato em breve." Se o cliente mencionar novo produto ou serviço: use os dados já coletados (nome, telefone) e inicie novo atendimento sem solicitar de novo. Nunca gere novo [LEAD_CAPTURADO] para o mesmo produto sem novo pedido explícito do cliente.
 
 FLUXO DE VISITA TÉCNICA:
 Use quando o produto exigir instalação e o cliente não conseguir tirar as medidas, ou quando o cliente pedir visita diretamente (Caminho 0).
@@ -719,10 +728,6 @@ async function processarMensagensPendentes(userId) {
     verificarAtualizacaoPerfil(userId);
   } catch (err) {
     console.error("Erro ao processar mensagens:", err.response?.data || err.message);
-    const tipo = err.response?.data?.error?.type;
-    if (tipo === "overloaded_error") {
-      await sendZAPIMessage(userId, "Em breve nossa equipe vai entrar em contato com você.");
-    }
   } finally {
     processingUsers.delete(userId);
   }
@@ -833,8 +838,8 @@ function mensagensComData(history, lead = null, knowledge = [], slots = null) {
     ctx += ` Cliente identificado — Nome: ${lead.nome || "desconhecido"} | Empresa: ${lead.empresa || "desconhecida"}`;
     if (lead.endereco)     ctx += ` | Endereço: ${lead.endereco}`;
     if (lead.stage)        ctx += ` | Etapa: ${lead.stage}`;
-    if (lead.last_summary) ctx += ` | Contexto anterior: ${lead.last_summary}`;
-    ctx += `. Use esses dados sem perguntar novamente. Confirme com o cliente e pergunte só o que estiver faltando.`;
+    if (lead.last_summary) ctx += ` | Contexto da última conversa (pode estar desatualizado): ${lead.last_summary}`;
+    ctx += `. Use esses dados sem perguntar novamente. Se o cliente mencionar produto ou assunto diferente do contexto anterior, inicie novo atendimento normalmente. Confirme com o cliente e pergunte só o que estiver faltando.`;
   }
   if (knowledge.length > 0) {
     ctx += `\n\n[Conhecimento relevante]:\n`;
