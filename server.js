@@ -323,6 +323,7 @@ async function initDb() {
     )
   `);
   await db.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS endereco TEXT`);
+  await db.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS arte_url TEXT`);
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS leads (
@@ -424,6 +425,31 @@ async function addToHistory(userId, role, content) {
     `INSERT INTO mensagens (user_id, role, content) VALUES ($1, $2, $3)`,
     [userId, role, content]
   );
+}
+
+async function salvarArteUrl(phone, url) {
+  await db.query(
+    `INSERT INTO leads (phone, arte_url) VALUES ($1, $2)
+     ON CONFLICT (phone) DO UPDATE SET arte_url = $2`,
+    [phone, url]
+  );
+}
+
+async function encaminharArteParaOperador(phone, imageUrl, caption) {
+  if (NOTIFICACOES.whatsapp_responsavel === "PREENCHA_AQUI") return;
+  try {
+    const lead = await getLead(phone);
+    const nome = lead?.nome || phone;
+    const captionText = `Arte/referência de ${nome} (${phone})` + (caption ? `\n"${caption}"` : "");
+    await axios.post(
+      `https://api.z-api.io/instances/${ZAPI_INSTANCE_ID}/token/${ZAPI_TOKEN}/send-image`,
+      { phone: NOTIFICACOES.whatsapp_responsavel, image: imageUrl, caption: captionText },
+      { headers: { "Client-Token": ZAPI_CLIENT_TOKEN, "Content-Type": "application/json" } }
+    );
+    console.log("[ARTE] Encaminhada para operador de:", phone);
+  } catch (err) {
+    console.error("[ARTE] Erro ao encaminhar arte para operador:", err.response?.data || err.message);
+  }
 }
 
 // ─── VISÃO: ANÁLISE DE IMAGENS COM CLAUDE ────────────────────────────────────
@@ -776,7 +802,11 @@ app.post("/webhook", async (req, res) => {
     // Imagem: analisa com Claude Vision e enfileira com descrição
     if (body.image) {
       const caption = body.image.caption ? " — legenda: " + body.image.caption : "";
-      if (body.image.imageUrl) artes[userId] = body.image.imageUrl;
+      if (body.image.imageUrl) {
+        artes[userId] = body.image.imageUrl;
+        salvarArteUrl(userId, body.image.imageUrl).catch(() => {});
+        encaminharArteParaOperador(userId, body.image.imageUrl, body.image.caption || "").catch(() => {});
+      }
 
       let descricao = "";
       if (body.image.imageUrl) {
@@ -925,7 +955,7 @@ async function verificarGatilhos(reply, userId) {
     await upsertLead(userId, { nome, empresa, stage: "qualificado" });
     await notificarResponsavel(assunto, corpo);
 
-    const arteUrl = artes[userId];
+    const arteUrl = artes[userId] || await db.query(`SELECT arte_url FROM leads WHERE phone = $1`, [userId]).then(r => r.rows[0]?.arte_url);
     if (arteUrl && NOTIFICACOES.whatsapp_responsavel !== "PREENCHA_AQUI") {
       try {
         const captionObs = observacao && observacao.toLowerCase() !== "nenhuma"
@@ -1035,7 +1065,7 @@ async function verificarGatilhos(reply, userId) {
       "Cliente pede alteração na arte - Comunynk",
       `${nome} quer alterações na arte.\n\nPedido: ${alteracao}\nTelefone: ${telefone}\nAbrir conversa: https://wa.me/${foneWA}`
     );
-    const arteUrl = artes[userId];
+    const arteUrl = artes[userId] || await db.query(`SELECT arte_url FROM leads WHERE phone = $1`, [userId]).then(r => r.rows[0]?.arte_url);
     if (arteUrl && NOTIFICACOES.whatsapp_responsavel !== "PREENCHA_AQUI") {
       try {
         await axios.post(
