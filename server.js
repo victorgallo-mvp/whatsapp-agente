@@ -9,9 +9,9 @@ const app = express();
 app.use(express.json());
 
 const ANTHROPIC_API_KEY  = process.env.ANTHROPIC_API_KEY;
-const ZAPI_INSTANCE_ID   = process.env.ZAPI_INSTANCE_ID;
-const ZAPI_TOKEN         = process.env.ZAPI_TOKEN;
-const ZAPI_CLIENT_TOKEN  = process.env.ZAPI_CLIENT_TOKEN;
+const EVOLUTION_URL      = (process.env.EVOLUTION_URL || "").replace(/\/$/, "");
+const EVOLUTION_API_KEY  = process.env.EVOLUTION_API_KEY  || "";
+const EVOLUTION_INSTANCE = process.env.EVOLUTION_INSTANCE || "comunynk-olivia";
 const PORT               = process.env.PORT || 3000;
 
 // Google Calendar (configurar depois)
@@ -443,11 +443,7 @@ async function encaminharArteParaOperador(phone, imageUrl, caption) {
     const lead = await getLead(phone);
     const nome = lead?.nome || phone;
     const captionText = `Arte/referência de ${nome} (${phone})` + (caption ? `\n"${caption}"` : "");
-    await axios.post(
-      `https://api.z-api.io/instances/${ZAPI_INSTANCE_ID}/token/${ZAPI_TOKEN}/send-image`,
-      { phone: NOTIFICACOES.whatsapp_responsavel, image: imageUrl, caption: captionText },
-      { headers: { "Client-Token": ZAPI_CLIENT_TOKEN, "Content-Type": "application/json" } }
-    );
+    await wppSendImage(NOTIFICACOES.whatsapp_responsavel, imageUrl, captionText);
     console.log("[ARTE] Encaminhada para operador de:", phone);
   } catch (err) {
     console.error("[ARTE] Erro ao encaminhar arte para operador:", err.response?.data || err.message);
@@ -597,17 +593,9 @@ async function processarMensagemResponsavel(body) {
 
   try {
     if (body.image?.imageUrl) {
-      await axios.post(
-        `https://api.z-api.io/instances/${ZAPI_INSTANCE_ID}/token/${ZAPI_TOKEN}/send-image`,
-        { phone: clientePhone, image: body.image.imageUrl, caption: intro + (conteudo ? "\n" + conteudo : "") },
-        { headers: { "Client-Token": ZAPI_CLIENT_TOKEN, "Content-Type": "application/json" } }
-      );
+      await wppSendImage(clientePhone, body.image.imageUrl, intro + (conteudo ? "\n" + conteudo : ""));
     } else if (body.document?.documentUrl) {
-      await axios.post(
-        `https://api.z-api.io/instances/${ZAPI_INSTANCE_ID}/token/${ZAPI_TOKEN}/send-document`,
-        { phone: clientePhone, document: body.document.documentUrl, fileName: body.document.fileName || "documento.pdf", caption: intro },
-        { headers: { "Client-Token": ZAPI_CLIENT_TOKEN, "Content-Type": "application/json" } }
-      );
+      await wppSendDocument(clientePhone, body.document.documentUrl, body.document.fileName || "documento.pdf", intro);
     } else if (conteudo) {
       await sendZAPIMessage(clientePhone, intro + "\n\n" + conteudo);
     } else {
@@ -761,11 +749,42 @@ async function processarMensagensPendentes(userId) {
   }
 }
 
-// ─── WEBHOOK Z-API ───────────────────────────────────────────────────────────
+// ─── WEBHOOK EVOLUTION API ───────────────────────────────────────────────────
+function parseWebhookBody(raw) {
+  if (!raw.data?.key) return raw;
+  const data = raw.data;
+  const key  = data.key;
+  const msg  = data.message || {};
+  const jid  = key.remoteJid || "";
+  const phone = jid.replace(/@s\.whatsapp\.net$/, "").replace(/@g\.us$/, "");
+
+  const imageMsg = msg.imageMessage;
+  const docMsg   = msg.documentMessage
+                || msg.documentWithCaptionMessage?.message?.documentMessage;
+  const audioMsg = msg.audioMessage;
+
+  return {
+    phone,
+    fromMe:   key.fromMe  || false,
+    isGroup:  jid.endsWith("@g.us"),
+    text:     (msg.conversation || msg.extendedTextMessage?.text)
+                ? { message: msg.conversation || msg.extendedTextMessage?.text }
+                : null,
+    image:    imageMsg ? { imageUrl: imageMsg.url, caption: imageMsg.caption || "" } : null,
+    document: docMsg   ? { documentUrl: docMsg.url, fileName: docMsg.fileName || "documento.pdf", caption: docMsg.caption || "" } : null,
+    audio:    audioMsg ? { audioUrl: audioMsg.url, ptt: audioMsg.ptt || false } : null,
+    video:    msg.videoMessage    || null,
+    sticker:  msg.stickerMessage  || null,
+    contact:  msg.contactMessage  || null,
+    location: msg.locationMessage || null,
+  };
+}
+
 app.post("/webhook", async (req, res) => {
   res.sendStatus(200);
   try {
-    const body = req.body;
+    if (req.body.event && req.body.event !== "messages.upsert") return;
+    const body = parseWebhookBody(req.body);
 
     if (body.fromMe) return;
     if (body.isGroup) return;
@@ -834,17 +853,30 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
-// ─── ENVIO VIA Z-API ─────────────────────────────────────────────────────────
+// ─── ENVIO VIA EVOLUTION API ─────────────────────────────────────────────────
+const EVOLUTION_HEADERS = () => ({ "apikey": EVOLUTION_API_KEY, "Content-Type": "application/json" });
+
 async function sendZAPIMessage(phone, text) {
   await axios.post(
-    `https://api.z-api.io/instances/${ZAPI_INSTANCE_ID}/token/${ZAPI_TOKEN}/send-text`,
-    { phone, message: text },
-    {
-      headers: {
-        "Client-Token": ZAPI_CLIENT_TOKEN,
-        "Content-Type": "application/json",
-      },
-    }
+    `${EVOLUTION_URL}/message/sendText/${EVOLUTION_INSTANCE}`,
+    { number: phone, text },
+    { headers: EVOLUTION_HEADERS() }
+  );
+}
+
+async function wppSendImage(phone, imageUrl, caption = "") {
+  await axios.post(
+    `${EVOLUTION_URL}/message/sendMedia/${EVOLUTION_INSTANCE}`,
+    { number: phone, mediatype: "image", media: imageUrl, caption },
+    { headers: EVOLUTION_HEADERS() }
+  );
+}
+
+async function wppSendDocument(phone, documentUrl, fileName, caption = "") {
+  await axios.post(
+    `${EVOLUTION_URL}/message/sendMedia/${EVOLUTION_INSTANCE}`,
+    { number: phone, mediatype: "document", media: documentUrl, fileName, caption },
+    { headers: EVOLUTION_HEADERS() }
   );
 }
 
@@ -963,15 +995,7 @@ async function verificarGatilhos(reply, userId) {
         const captionObs = observacao && observacao.toLowerCase() !== "nenhuma"
           ? "\n\nObservação do cliente: " + observacao
           : "";
-        await axios.post(
-          `https://api.z-api.io/instances/${ZAPI_INSTANCE_ID}/token/${ZAPI_TOKEN}/send-image`,
-          {
-            phone:   NOTIFICACOES.whatsapp_responsavel,
-            image:   arteUrl,
-            caption: "Arte de referência do cliente: " + nome + captionObs,
-          },
-          { headers: { "Client-Token": ZAPI_CLIENT_TOKEN, "Content-Type": "application/json" } }
-        );
+        await wppSendImage(NOTIFICACOES.whatsapp_responsavel, arteUrl, "Arte de referência do cliente: " + nome + captionObs);
         console.log("Arte encaminhada para o responsavel.");
       } catch (err) {
         console.error("Erro ao encaminhar arte:", err.response?.data || err.message);
@@ -1070,15 +1094,7 @@ async function verificarGatilhos(reply, userId) {
     const arteUrl = artes[userId] || await db.query(`SELECT arte_url FROM leads WHERE phone = $1`, [userId]).then(r => r.rows[0]?.arte_url);
     if (arteUrl && NOTIFICACOES.whatsapp_responsavel !== "PREENCHA_AQUI") {
       try {
-        await axios.post(
-          `https://api.z-api.io/instances/${ZAPI_INSTANCE_ID}/token/${ZAPI_TOKEN}/send-image`,
-          {
-            phone:   NOTIFICACOES.whatsapp_responsavel,
-            image:   arteUrl,
-            caption: `Arte de ${nome} — alteração solicitada: ${alteracao}`,
-          },
-          { headers: { "Client-Token": ZAPI_CLIENT_TOKEN, "Content-Type": "application/json" } }
-        );
+        await wppSendImage(NOTIFICACOES.whatsapp_responsavel, arteUrl, `Arte de ${nome} — alteração solicitada: ${alteracao}`);
         console.log("[ARTE_REVISAO] Arte encaminhada ao responsavel com descricao de alteracao.");
       } catch (err) {
         console.error("[ARTE_REVISAO] Erro ao encaminhar arte:", err.response?.data || err.message);
