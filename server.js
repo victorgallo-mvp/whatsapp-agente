@@ -616,7 +616,7 @@ async function processarMensagemResponsavel(body) {
     console.log("[RELAY] Mensagem encaminhada para cliente:", clientePhone);
     await sendZAPIMessage(NOTIFICACOES.whatsapp_responsavel, "Mensagem encaminhada para " + clientePhone + ".");
   } catch (err) {
-    console.error("Erro no relay:", err.response?.data || err.message);
+    console.error("Erro no relay:", JSON.stringify(err.response?.data || err.message));
     await sendZAPIMessage(NOTIFICACOES.whatsapp_responsavel, "Erro ao encaminhar a mensagem. Tente novamente.");
   }
 }
@@ -856,10 +856,14 @@ app.post("/webhook", async (req, res) => {
 // ─── ENVIO VIA EVOLUTION API ─────────────────────────────────────────────────
 const EVOLUTION_HEADERS = () => ({ "apikey": EVOLUTION_API_KEY, "Content-Type": "application/json" });
 
+function sanitizePhone(phone) {
+  return (phone || "").replace(/\D/g, "");
+}
+
 async function sendZAPIMessage(phone, text) {
   await axios.post(
     `${EVOLUTION_URL}/message/sendText/${EVOLUTION_INSTANCE}`,
-    { number: phone, text },
+    { number: sanitizePhone(phone), text },
     { headers: EVOLUTION_HEADERS() }
   );
 }
@@ -867,7 +871,7 @@ async function sendZAPIMessage(phone, text) {
 async function wppSendImage(phone, imageUrl, caption = "") {
   await axios.post(
     `${EVOLUTION_URL}/message/sendMedia/${EVOLUTION_INSTANCE}`,
-    { number: phone, mediatype: "image", media: imageUrl, caption },
+    { number: sanitizePhone(phone), mediatype: "image", media: imageUrl, caption },
     { headers: EVOLUTION_HEADERS() }
   );
 }
@@ -875,7 +879,7 @@ async function wppSendImage(phone, imageUrl, caption = "") {
 async function wppSendDocument(phone, documentUrl, fileName, caption = "") {
   await axios.post(
     `${EVOLUTION_URL}/message/sendMedia/${EVOLUTION_INSTANCE}`,
-    { number: phone, mediatype: "document", media: documentUrl, fileName, caption },
+    { number: sanitizePhone(phone), mediatype: "document", media: documentUrl, fileName, caption },
     { headers: EVOLUTION_HEADERS() }
   );
 }
