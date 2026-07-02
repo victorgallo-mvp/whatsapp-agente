@@ -245,6 +245,17 @@ REGRAS DE PREÇO:
 - Nunca informe prazos exatos. Diga: "O prazo é confirmado pelo time após a análise do pedido."
 - Se o produto não estiver na tabela: "Esse item preciso verificar com o time. Posso deixar seu contato para um consultor te retornar?"
 
+SOLICITAÇÃO DE SUPORTE:
+
+Use quando o atendimento exigir intervenção humana:
+- Cliente pediu explicitamente falar com um consultor ou humano
+- Pergunta técnica específica fora do seu escopo de conhecimento
+- Reclamação ou situação delicada que exige autorização
+- Situação que você não consegue resolver com as informações disponíveis
+
+Quando necessário, informe: "Vou passar seu contato para um consultor da nossa equipe que pode te ajudar melhor com isso."
+Inclua ao final: [PRECISA_SUPORTE] Cliente: {nome} | Telefone: {telefone}
+
 ARGUMENTOS DE VENDA:
 
 Use apenas quando houver objeção real do cliente.
@@ -326,6 +337,7 @@ async function initDb() {
   `);
   await db.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS endereco TEXT`);
   await db.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS arte_url TEXT`);
+  await db.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS olivia_ativa BOOLEAN DEFAULT TRUE`);
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS leads (
@@ -401,7 +413,7 @@ async function getHistory(userId) {
 
 async function getLead(phone) {
   const res = await db.query(
-    `SELECT nome, empresa, endereco, stage, profile, last_summary, total_interactions FROM leads WHERE phone = $1`,
+    `SELECT nome, empresa, endereco, stage, profile, last_summary, total_interactions, olivia_ativa FROM leads WHERE phone = $1`,
     [phone]
   );
   return res.rows[0] || null;
@@ -703,6 +715,11 @@ async function processarMensagensPendentes(userId) {
       ehAgendamento ? buscarSlotsDisponiveis(5) : Promise.resolve(null),
     ]);
 
+    if (lead?.olivia_ativa === false) {
+      console.log("[OLIVIA] Desativada para:", userId);
+      return;
+    }
+
     if (knowledge.length > 0) {
       console.log("[RAG] " + knowledge.length + " resultado(s) para:", queryText.substring(0, 60));
     }
@@ -731,6 +748,7 @@ async function processarMensagensPendentes(userId) {
       .replace(/\[ORCAMENTO_APROVADO\].*/g, "")
       .replace(/\[VISITA_REAGENDADA\].*/g, "")
       .replace(/\[VISITA_CANCELADA\].*/g, "")
+      .replace(/\[PRECISA_SUPORTE\].*/g, "")
       .trim();
 
     if (!conflito) {
@@ -1145,6 +1163,19 @@ async function verificarGatilhos(reply, userId) {
     console.log("[VISITA_REAGENDADA]", nome, dataStr, horario);
   }
 
+  if (reply.includes("[PRECISA_SUPORTE]")) {
+    const linha    = reply.match(/\[PRECISA_SUPORTE\](.*)/)?.[1]?.trim() || "";
+    const nome     = linha.match(/Cliente: ([^|]+)/)?.[1]?.trim() || "Cliente";
+    const telefone = linha.match(/Telefone: ([^|]+)/)?.[1]?.trim() || userId;
+    const foneWA   = formatarTelefoneWA(telefone);
+    await db.query(`UPDATE leads SET olivia_ativa = FALSE WHERE phone = $1`, [userId]);
+    await notificarResponsavel(
+      "Olivia solicitou suporte — " + nome,
+      `Olivia identificou que esse atendimento precisa de um consultor.\n\nCliente: ${nome}\nTelefone: ${telefone}\nAbrir conversa: https://wa.me/${foneWA}\n\nOlivia foi desativada para esse chat. Reative quando concluir o atendimento.`
+    );
+    console.log("[PRECISA_SUPORTE] Olivia desativada para:", userId);
+  }
+
   if (reply.includes("[VISITA_CANCELADA]")) {
     const linha    = reply.match(/\[VISITA_CANCELADA\](.*)/)?.[1]?.trim() || "";
     const nome     = linha.match(/Nome: ([^|]+)/)?.[1]?.trim()     || "Cliente";
@@ -1420,6 +1451,37 @@ async function notificarResponsavel(assunto, corpo) {
     console.log("[NOTIFICACAO - WHATSAPP NAO CONFIGURADO] " + assunto);
   }
 }
+
+// ─── API: CONTROLE DA OLIVIA POR CHAT ────────────────────────────────────────
+app.post("/api/leads/:phone/toggle-olivia", async (req, res) => {
+  try {
+    const phone = req.params.phone;
+    const { ativa } = req.body;
+    if (typeof ativa !== "boolean") return res.status(400).json({ error: "ativa deve ser boolean" });
+    await db.query(
+      `INSERT INTO leads (phone, olivia_ativa) VALUES ($1, $2)
+       ON CONFLICT (phone) DO UPDATE SET olivia_ativa = $2`,
+      [phone, ativa]
+    );
+    console.log("[OLIVIA] Toggle:", phone, "→", ativa);
+    res.json({ ok: true, phone, olivia_ativa: ativa });
+  } catch (err) {
+    console.error("[TOGGLE] Erro:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/leads", async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT phone, nome, empresa, stage, olivia_ativa, last_interaction_at, total_interactions
+       FROM leads ORDER BY last_interaction_at DESC NULLS LAST LIMIT 100`
+    );
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // ─── ADMIN: INDEXAR BASE DE CONHECIMENTO ─────────────────────────────────────
 app.post("/admin/knowledge", async (req, res) => {
