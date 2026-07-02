@@ -29,7 +29,17 @@
     flex-shrink: 0;
   }
   header h1 { font-size: 16px; font-weight: 600; letter-spacing: .5px; }
-  header span { font-size: 12px; opacity: .55; margin-left: auto; }
+  #conn-status {
+    font-size: 11px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-weight: 600;
+    margin-left: auto;
+    transition: background .3s;
+  }
+  #conn-status.connected    { background: #166534; color: #dcfce7; }
+  #conn-status.reconnecting { background: #92400e; color: #fef3c7; }
+  #conn-status.disconnected { background: #7f1d1d; color: #fee2e2; }
 
   /* ─── LAYOUT ─────────────────────────────────────── */
   .layout {
@@ -63,10 +73,7 @@
   }
   .search-wrap input:focus { border-color: #6366f1; background: #fff; }
 
-  .lead-list {
-    overflow-y: auto;
-    flex: 1;
-  }
+  .lead-list { overflow-y: auto; flex: 1; }
 
   .lead-item {
     padding: 12px 14px;
@@ -76,100 +83,55 @@
     flex-direction: column;
     gap: 3px;
     transition: background .12s;
+    position: relative;
   }
   .lead-item:hover { background: #f5f5f5; }
   .lead-item.active { background: #eef2ff; }
-
-  .lead-top {
-    display: flex;
-    align-items: center;
-    gap: 8px;
+  .lead-item.unread::after {
+    content: "";
+    position: absolute;
+    right: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #6366f1;
   }
+
+  .lead-top { display: flex; align-items: center; gap: 8px; }
   .lead-name {
-    font-size: 13.5px;
-    font-weight: 600;
-    flex: 1;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    font-size: 13.5px; font-weight: 600; flex: 1;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  .lead-time {
-    font-size: 11px;
-    color: #9ca3af;
-    white-space: nowrap;
-  }
-
+  .lead-time { font-size: 11px; color: #9ca3af; white-space: nowrap; }
   .lead-preview {
-    font-size: 12px;
-    color: #6b7280;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    font-size: 12px; color: #6b7280;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-
-  .lead-badges {
-    display: flex;
-    gap: 5px;
-    align-items: center;
-    margin-top: 2px;
-  }
-  .badge {
-    font-size: 10px;
-    padding: 1px 7px;
-    border-radius: 999px;
-    font-weight: 600;
-    letter-spacing: .2px;
-  }
+  .lead-badges { display: flex; gap: 5px; align-items: center; margin-top: 2px; }
+  .badge { font-size: 10px; padding: 1px 7px; border-radius: 999px; font-weight: 600; letter-spacing: .2px; }
   .badge-on  { background: #dcfce7; color: #166534; }
   .badge-off { background: #fee2e2; color: #991b1b; }
   .badge-stage { background: #e0e7ff; color: #3730a3; }
 
-  .empty-state {
-    padding: 40px 20px;
-    text-align: center;
-    color: #9ca3af;
-    font-size: 13px;
-  }
+  .empty-state { padding: 40px 20px; text-align: center; color: #9ca3af; font-size: 13px; }
 
-  /* ─── MAIN PANEL ─────────────────────────────────── */
-  .main {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-
-  .placeholder {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #9ca3af;
-    font-size: 14px;
-  }
+  /* ─── MAIN ───────────────────────────────────────── */
+  .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .placeholder { flex: 1; display: flex; align-items: center; justify-content: center; color: #9ca3af; font-size: 14px; }
 
   /* ─── CHAT HEADER ────────────────────────────────── */
   .chat-header {
-    background: #fff;
-    border-bottom: 1px solid #e5e7eb;
-    padding: 12px 20px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    flex-shrink: 0;
+    background: #fff; border-bottom: 1px solid #e5e7eb;
+    padding: 12px 20px; display: flex; align-items: center; gap: 12px; flex-shrink: 0;
   }
   .chat-info { flex: 1; }
   .chat-name { font-size: 15px; font-weight: 600; }
   .chat-sub  { font-size: 12px; color: #6b7280; margin-top: 2px; }
 
   .toggle-btn {
-    padding: 7px 16px;
-    border-radius: 8px;
-    border: none;
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: opacity .15s;
+    padding: 7px 16px; border-radius: 8px; border: none;
+    font-size: 13px; font-weight: 600; cursor: pointer; transition: opacity .15s;
   }
   .toggle-btn:hover { opacity: .82; }
   .toggle-on  { background: #ef4444; color: #fff; }
@@ -177,95 +139,81 @@
 
   /* ─── MESSAGES ───────────────────────────────────── */
   .messages {
-    flex: 1;
-    overflow-y: auto;
-    padding: 16px 20px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    background: #f0f2f5;
+    flex: 1; overflow-y: auto; padding: 16px 20px;
+    display: flex; flex-direction: column; gap: 8px; background: #f0f2f5;
   }
 
-  .msg-row {
-    display: flex;
-    flex-direction: column;
-    max-width: 72%;
-  }
-  .msg-row.user   { align-self: flex-end; align-items: flex-end; }
+  .msg-row { display: flex; flex-direction: column; max-width: 72%; }
+  .msg-row.user      { align-self: flex-end; align-items: flex-end; }
   .msg-row.assistant { align-self: flex-start; align-items: flex-start; }
-  .msg-row.system { align-self: center; max-width: 90%; }
+  .msg-row.system    { align-self: center; max-width: 90%; }
 
   .msg-bubble {
-    padding: 8px 12px;
-    border-radius: 12px;
-    font-size: 13.5px;
-    line-height: 1.5;
-    white-space: pre-wrap;
-    word-break: break-word;
+    padding: 8px 12px; border-radius: 12px; font-size: 13.5px;
+    line-height: 1.5; white-space: pre-wrap; word-break: break-word;
   }
   .msg-row.user      .msg-bubble { background: #dcf8c6; border-bottom-right-radius: 4px; }
   .msg-row.assistant .msg-bubble { background: #fff; border-bottom-left-radius: 4px; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
   .msg-row.system    .msg-bubble { background: #e0e7ff; color: #3730a3; font-size: 12px; text-align: center; border-radius: 8px; }
 
-  .msg-time {
-    font-size: 10.5px;
-    color: #9ca3af;
-    margin-top: 3px;
-  }
+  .msg-tag { font-size: 10px; color: #9ca3af; margin-bottom: 1px; }
+  .msg-time { font-size: 10.5px; color: #9ca3af; margin-top: 3px; }
 
   /* ─── INPUT ──────────────────────────────────────── */
   .input-area {
-    background: #fff;
-    border-top: 1px solid #e5e7eb;
-    padding: 12px 16px;
-    display: flex;
-    gap: 10px;
-    flex-shrink: 0;
+    background: #fff; border-top: 1px solid #e5e7eb;
+    padding: 12px 16px; display: flex; gap: 10px; flex-shrink: 0;
   }
   .input-area textarea {
-    flex: 1;
-    resize: none;
-    border: 1px solid #d1d5db;
-    border-radius: 8px;
-    padding: 9px 12px;
-    font-size: 13.5px;
-    font-family: inherit;
-    outline: none;
-    height: 42px;
-    max-height: 120px;
-    overflow-y: auto;
-    line-height: 1.4;
+    flex: 1; resize: none; border: 1px solid #d1d5db; border-radius: 8px;
+    padding: 9px 12px; font-size: 13.5px; font-family: inherit;
+    outline: none; height: 42px; max-height: 120px; overflow-y: auto; line-height: 1.4;
   }
   .input-area textarea:focus { border-color: #6366f1; }
   .send-btn {
-    padding: 0 20px;
-    background: #6366f1;
-    color: #fff;
-    border: none;
-    border-radius: 8px;
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-    white-space: nowrap;
+    padding: 0 20px; background: #6366f1; color: #fff; border: none;
+    border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
   }
   .send-btn:hover { background: #4f46e5; }
   .send-btn:disabled { background: #c7d2fe; cursor: default; }
 
+  /* ─── MODAL ──────────────────────────────────────── */
+  .modal-backdrop {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,.45); z-index: 100;
+    align-items: center; justify-content: center;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal-box {
+    background: #fff; border-radius: 14px; padding: 24px;
+    width: 420px; max-width: 95vw; display: flex; flex-direction: column; gap: 14px;
+    box-shadow: 0 8px 32px rgba(0,0,0,.18);
+  }
+  .modal-box h3 { font-size: 16px; font-weight: 700; }
+  .modal-box p  { font-size: 13px; color: #6b7280; }
+  .modal-box textarea {
+    width: 100%; height: 88px; resize: vertical; border: 1px solid #d1d5db;
+    border-radius: 8px; padding: 9px 12px; font-size: 13px; font-family: inherit; outline: none;
+  }
+  .modal-box textarea:focus { border-color: #6366f1; }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+  .modal-actions button {
+    padding: 8px 16px; border-radius: 8px; border: none; font-size: 13px;
+    font-weight: 600; cursor: pointer;
+  }
+  .btn-primary { background: #22c55e; color: #fff; }
+  .btn-primary:hover { background: #16a34a; }
+  .btn-secondary { background: #6366f1; color: #fff; }
+  .btn-secondary:hover { background: #4f46e5; }
+  .btn-cancel { background: #f3f4f6; color: #374151; }
+  .btn-cancel:hover { background: #e5e7eb; }
+
   /* ─── TOAST ──────────────────────────────────────── */
   #toast {
-    position: fixed;
-    bottom: 24px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: #1a1a2e;
-    color: #fff;
-    padding: 9px 20px;
-    border-radius: 8px;
-    font-size: 13px;
-    opacity: 0;
-    transition: opacity .25s;
-    pointer-events: none;
-    z-index: 9999;
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: #1a1a2e; color: #fff; padding: 9px 20px;
+    border-radius: 8px; font-size: 13px; opacity: 0;
+    transition: opacity .25s; pointer-events: none; z-index: 9999;
   }
   #toast.show { opacity: 1; }
 </style>
@@ -274,11 +222,10 @@
 
 <header>
   <h1>Comunynk · Painel Olivia</h1>
-  <span id="last-update">Aguardando...</span>
+  <span id="conn-status" class="disconnected">Conectando...</span>
 </header>
 
 <div class="layout">
-  <!-- ─── SIDEBAR ─────────────────────────────────────── -->
   <aside class="sidebar">
     <div class="search-wrap">
       <input type="text" id="search" placeholder="Buscar por nome ou telefone...">
@@ -288,7 +235,6 @@
     </div>
   </aside>
 
-  <!-- ─── MAIN ─────────────────────────────────────────── -->
   <main class="main" id="main">
     <div class="placeholder" id="placeholder">Selecione um lead para ver a conversa</div>
 
@@ -298,37 +244,54 @@
           <div class="chat-name" id="chat-name">—</div>
           <div class="chat-sub"  id="chat-sub">—</div>
         </div>
-        <button class="toggle-btn" id="toggle-btn" onclick="toggleOlivia()">—</button>
+        <button class="toggle-btn" id="toggle-btn" onclick="clickToggle()">—</button>
       </div>
 
       <div class="messages" id="messages"></div>
 
       <div class="input-area">
-        <textarea id="msg-input" placeholder="Mensagem manual (enviada como assistente)..." onkeydown="handleKey(event)"></textarea>
+        <textarea id="msg-input"
+          placeholder="Mensagem manual (registrada como assistente)..."
+          onkeydown="handleKey(event)"></textarea>
         <button class="send-btn" id="send-btn" onclick="sendMsg()">Enviar</button>
       </div>
     </div>
   </main>
 </div>
 
+<!-- Modal de reativação -->
+<div class="modal-backdrop" id="activate-modal">
+  <div class="modal-box">
+    <h3>Ativar Olivia</h3>
+    <p>Deseja enviar uma mensagem de retorno para o cliente?</p>
+    <textarea id="activate-msg"></textarea>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal()">Cancelar</button>
+      <button class="btn-secondary" onclick="confirmActivate(false)">Ativar sem mensagem</button>
+      <button class="btn-primary"   onclick="confirmActivate(true)">Ativar e enviar</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script>
-  let leads       = [];
-  let activePhone = null;
-  let oliviaAtiva = true;
-  let msgsCache   = [];
-  let pollTimer   = null;
+  let leads         = [];
+  let activePhone   = null;
+  let oliviaAtiva   = true;
+  let msgsCache     = [];
+  let unreadPhones  = new Set();
+  let pollFallback  = null;
 
-  // ─── UTILS ────────────────────────────────────────────
+  // ─── UTILS ─────────────────────────────────────────────────────────
   function timeAgo(iso) {
     if (!iso) return "";
     const diff = Date.now() - new Date(iso).getTime();
     const m = Math.floor(diff / 60000);
-    if (m < 1)   return "agora";
-    if (m < 60)  return m + "m";
+    if (m < 1)  return "agora";
+    if (m < 60) return m + "m";
     const h = Math.floor(m / 60);
-    if (h < 24)  return h + "h";
+    if (h < 24) return h + "h";
     return Math.floor(h / 24) + "d";
   }
 
@@ -346,6 +309,12 @@
     setTimeout(() => el.classList.remove("show"), ms);
   }
 
+  function escHtml(s) {
+    return (s || "")
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
   function previewMsg(content, role) {
     if (!content) return "";
     const prefix = role === "user" ? "" : "Olivia: ";
@@ -353,26 +322,34 @@
     return prefix + (clean.length > 55 ? clean.slice(0, 55) + "…" : clean);
   }
 
-  // ─── LEADS ────────────────────────────────────────────
+  function msgTag(content, role) {
+    if (role !== "assistant") return "";
+    const m = content.match(/^\[([A-Z_:]+)\]/);
+    if (!m) return "";
+    const tag = m[1];
+    if (tag === "DIRETO")         return "Operador (WhatsApp)";
+    if (tag === "RELAY:MENSAGEM") return "Operador (dashboard)";
+    if (tag === "RELAY:ARTE")     return "Operador (arte)";
+    if (tag === "RELAY:DOCUMENTO")return "Operador (documento)";
+    return "";
+  }
+
+  // ─── LEADS ─────────────────────────────────────────────────────────
   async function fetchLeads() {
     try {
       const r = await fetch("/api/leads");
       leads   = await r.json();
       renderLeads();
-      document.getElementById("last-update").textContent =
-        "Atualizado: " + new Date().toLocaleTimeString("pt-BR");
-    } catch (e) {
-      console.error("Erro ao buscar leads:", e);
-    }
+    } catch {}
   }
 
   function renderLeads() {
-    const q   = document.getElementById("search").value.toLowerCase();
+    const q    = document.getElementById("search").value.toLowerCase();
     const list = document.getElementById("lead-list");
     const filtered = leads.filter(l =>
       !q ||
-      (l.nome   || "").toLowerCase().includes(q) ||
-      (l.phone  || "").includes(q) ||
+      (l.nome    || "").toLowerCase().includes(q) ||
+      (l.phone   || "").includes(q) ||
       (l.empresa || "").toLowerCase().includes(q)
     );
 
@@ -382,18 +359,18 @@
     }
 
     list.innerHTML = filtered.map(l => `
-      <div class="lead-item ${l.phone === activePhone ? "active" : ""}"
+      <div class="lead-item ${l.phone === activePhone ? "active" : ""} ${unreadPhones.has(l.phone) && l.phone !== activePhone ? "unread" : ""}"
            onclick="selectLead('${l.phone}')">
         <div class="lead-top">
-          <span class="lead-name">${l.nome || l.phone}</span>
+          <span class="lead-name">${escHtml(l.nome || l.phone)}</span>
           <span class="lead-time">${timeAgo(l.last_interaction_at)}</span>
         </div>
-        <div class="lead-preview">${previewMsg(l.ultima_mensagem, l.ultima_role)}</div>
+        <div class="lead-preview">${escHtml(previewMsg(l.ultima_mensagem, l.ultima_role))}</div>
         <div class="lead-badges">
           <span class="badge ${l.olivia_ativa !== false ? "badge-on" : "badge-off"}">
             ${l.olivia_ativa !== false ? "Olivia ON" : "Olivia OFF"}
           </span>
-          ${l.stage ? `<span class="badge badge-stage">${l.stage}</span>` : ""}
+          ${l.stage ? `<span class="badge badge-stage">${escHtml(l.stage)}</span>` : ""}
         </div>
       </div>
     `).join("");
@@ -401,26 +378,25 @@
 
   document.getElementById("search").addEventListener("input", renderLeads);
 
-  // ─── SELECT LEAD ──────────────────────────────────────
+  // ─── SELECT LEAD ────────────────────────────────────────────────────
   async function selectLead(phone) {
     activePhone = phone;
+    unreadPhones.delete(phone);
     renderLeads();
 
     const lead = leads.find(l => l.phone === phone) || {};
     oliviaAtiva = lead.olivia_ativa !== false;
 
-    document.getElementById("placeholder").style.display = "none";
+    document.getElementById("placeholder").style.display  = "none";
     const panel = document.getElementById("chat-panel");
     panel.style.display = "flex";
 
-    document.getElementById("chat-name").textContent =
-      lead.nome || phone;
-    document.getElementById("chat-sub").textContent =
+    document.getElementById("chat-name").textContent = lead.nome || phone;
+    document.getElementById("chat-sub").textContent  =
       [lead.empresa, phone].filter(Boolean).join(" · ");
 
     updateToggleBtn();
     await loadMsgs();
-    scheduleLeadPoll();
   }
 
   function updateToggleBtn() {
@@ -434,7 +410,7 @@
     }
   }
 
-  // ─── MESSAGES ─────────────────────────────────────────
+  // ─── MESSAGES ───────────────────────────────────────────────────────
   async function loadMsgs(silent = false) {
     if (!activePhone) return;
     try {
@@ -445,71 +421,135 @@
       if (!changed) return;
       msgsCache = msgs;
 
-      const box = document.getElementById("messages");
-      const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
+      const box     = document.getElementById("messages");
+      const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
 
       box.innerHTML = msgs.map(m => {
-        const rowClass = m.role === "user" ? "user"
-                       : m.role === "assistant" ? "assistant"
-                       : "system";
+        const rowClass = m.role === "user" ? "user" : m.role === "assistant" ? "assistant" : "system";
+        const tag      = msgTag(m.content, m.role);
+        const clean    = tag ? m.content.replace(/^\[[^\]]+\]\s*/, "") : m.content;
         return `
           <div class="msg-row ${rowClass}">
-            <div class="msg-bubble">${escHtml(m.content)}</div>
+            ${tag ? `<div class="msg-tag">${escHtml(tag)}</div>` : ""}
+            <div class="msg-bubble">${escHtml(clean)}</div>
             <div class="msg-time">${fmtTime(m.created_at)}</div>
           </div>
         `;
       }).join("");
 
-      if (atBottom || !silent) {
-        box.scrollTop = box.scrollHeight;
+      if (atBottom || !silent) box.scrollTop = box.scrollHeight;
+    } catch {}
+  }
+
+  // ─── SSE ────────────────────────────────────────────────────────────
+  function connectSSE() {
+    const statusEl = document.getElementById("conn-status");
+    statusEl.textContent = "Conectando...";
+    statusEl.className   = "reconnecting";
+
+    const es = new EventSource("/api/stream");
+
+    es.onopen = () => {
+      statusEl.textContent = "Tempo real";
+      statusEl.className   = "connected";
+      clearInterval(pollFallback);
+      pollFallback = null;
+    };
+
+    es.onmessage = async (e) => {
+      const data = JSON.parse(e.data);
+      if (data.type === "connected") return;
+
+      if (data.type === "message") {
+        if (data.phone === activePhone) {
+          await loadMsgs(true);
+        } else {
+          unreadPhones.add(data.phone);
+        }
+        // Atualiza preview da sidebar sem re-fetch completo
+        const lead = leads.find(l => l.phone === data.phone);
+        if (lead) {
+          lead.ultima_mensagem     = data.content;
+          lead.ultima_role         = data.role;
+          lead.last_interaction_at = data.created_at;
+          // Re-sort
+          leads.sort((a, b) =>
+            new Date(b.last_interaction_at || 0) - new Date(a.last_interaction_at || 0)
+          );
+        }
+        renderLeads();
       }
-    } catch (e) {
-      console.error("Erro ao carregar mensagens:", e);
+
+      if (data.type === "leads_update") {
+        await fetchLeads();
+        if (data.phone === activePhone && data.olivia_ativa !== undefined) {
+          oliviaAtiva = data.olivia_ativa;
+          updateToggleBtn();
+        }
+      }
+    };
+
+    es.onerror = () => {
+      statusEl.textContent = "Reconectando...";
+      statusEl.className   = "reconnecting";
+      if (!pollFallback) {
+        pollFallback = setInterval(() => { fetchLeads(); loadMsgs(true); }, 5000);
+      }
+    };
+  }
+
+  // ─── TOGGLE ─────────────────────────────────────────────────────────
+  function clickToggle() {
+    if (!activePhone) return;
+    if (oliviaAtiva) {
+      // Desativar — imediato, sem modal
+      doToggle(false, null);
+    } else {
+      // Ativar — abre modal com mensagem opcional
+      const lead = leads.find(l => l.phone === activePhone) || {};
+      const nome = lead.nome || "cliente";
+      document.getElementById("activate-msg").value =
+        `Olá, ${nome}! Dando continuidade ao seu atendimento. Como posso te ajudar?`;
+      document.getElementById("activate-modal").classList.add("open");
     }
   }
 
-  function escHtml(s) {
-    return (s || "")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
+  function closeModal() {
+    document.getElementById("activate-modal").classList.remove("open");
   }
 
-  // ─── POLLING ──────────────────────────────────────────
-  function scheduleLeadPoll() {
-    clearInterval(pollTimer);
-    pollTimer = setInterval(async () => {
-      await fetchLeads();
-      await loadMsgs(true);
-    }, 4000);
+  async function confirmActivate(comMensagem) {
+    closeModal();
+    const mensagem = comMensagem ? document.getElementById("activate-msg").value.trim() : null;
+    await doToggle(true, mensagem);
   }
 
-  // ─── TOGGLE OLIVIA ────────────────────────────────────
-  async function toggleOlivia() {
-    if (!activePhone) return;
-    const novaAtiva = !oliviaAtiva;
+  async function doToggle(ativa, mensagem) {
     try {
+      const body = { ativa };
+      if (mensagem) body.mensagem = mensagem;
+
       const r = await fetch(`/api/leads/${activePhone}/toggle-olivia`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ativa: novaAtiva }),
+        body: JSON.stringify(body),
       });
       if (!r.ok) throw new Error(await r.text());
-      oliviaAtiva = novaAtiva;
-      updateToggleBtn();
 
+      oliviaAtiva = ativa;
+      updateToggleBtn();
       const lead = leads.find(l => l.phone === activePhone);
-      if (lead) lead.olivia_ativa = novaAtiva;
+      if (lead) lead.olivia_ativa = ativa;
       renderLeads();
-      toast(novaAtiva ? "Olivia ativada" : "Olivia desativada");
+      toast(ativa ? "Olivia ativada" : "Olivia desativada");
+      if (mensagem) await loadMsgs(true);
     } catch (e) {
       toast("Erro ao alterar Olivia");
       console.error(e);
     }
   }
 
-  // ─── SEND ─────────────────────────────────────────────
+  // ─── SEND ───────────────────────────────────────────────────────────
   async function sendMsg() {
     const textarea = document.getElementById("msg-input");
     const text     = textarea.value.trim();
@@ -527,7 +567,6 @@
       if (!r.ok) throw new Error(await r.text());
       textarea.value = "";
       textarea.style.height = "42px";
-      await loadMsgs();
       toast("Mensagem enviada");
     } catch (e) {
       toast("Erro ao enviar mensagem");
@@ -547,9 +586,14 @@
     ta.style.height = Math.min(ta.scrollHeight, 120) + "px";
   }
 
-  // ─── INIT ─────────────────────────────────────────────
+  // Fecha modal ao clicar fora da caixa
+  document.getElementById("activate-modal").addEventListener("click", function(e) {
+    if (e.target === this) closeModal();
+  });
+
+  // ─── INIT ───────────────────────────────────────────────────────────
   fetchLeads();
-  setInterval(fetchLeads, 4000);
+  connectSSE();
 </script>
 </body>
 </html>

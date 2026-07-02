@@ -434,13 +434,15 @@ async function upsertLead(phone, { nome, empresa, endereco, stage } = {}) {
        total_interactions  = leads.total_interactions + 1`,
     [phone, nome || null, empresa || null, endereco || null, stage || null]
   );
+  broadcastSSE("leads_update", { phone });
 }
 
 async function addToHistory(userId, role, content) {
-  await db.query(
-    `INSERT INTO mensagens (user_id, role, content) VALUES ($1, $2, $3)`,
+  const res = await db.query(
+    `INSERT INTO mensagens (user_id, role, content) VALUES ($1, $2, $3) RETURNING created_at`,
     [userId, role, content]
   );
+  broadcastSSE("message", { phone: userId, role, content, created_at: res.rows[0]?.created_at });
 }
 
 async function salvarArteUrl(phone, url) {
@@ -635,6 +637,16 @@ async function processarMensagemResponsavel(body) {
   }
 }
 
+// ─── SSE (PUSH PARA DASHBOARD) ───────────────────────────────────────────────
+const sseClients = new Set();
+
+function broadcastSSE(type, data) {
+  const payload = `data: ${JSON.stringify({ type, ...data })}\n\n`;
+  sseClients.forEach(res => {
+    try { res.write(payload); } catch { sseClients.delete(res); }
+  });
+}
+
 // ─── DEBOUNCE DE MENSAGENS ───────────────────────────────────────────────────
 const pendingMessages   = {};
 const lastResponseTime  = {};
@@ -806,14 +818,30 @@ app.post("/webhook", async (req, res) => {
     if (req.body.event && req.body.event !== "messages.upsert") return;
     const body = parseWebhookBody(req.body);
 
-    if (body.fromMe) return;
     if (body.isGroup) return;
 
-    // Detecta se é o responsável enviando um relay
     const foneBody        = (body.phone || "").replace(/\D/g, "");
     const foneResponsavel = (NOTIFICACOES.whatsapp_responsavel || "").replace(/\D/g, "");
     const semDDI          = n => n.startsWith("55") && n.length >= 12 ? n.slice(2) : n;
     const sem9            = n => n.startsWith("55") && n.length === 13 && n[4] === "9" ? n.slice(0, 4) + n.slice(5) : n;
+
+    // Mensagem enviada da própria instância (operador via WhatsApp Web/App)
+    if (body.fromMe) {
+      if (body.text?.message && body.phone) {
+        const isToResponsavel = foneResponsavel.length > 5 && (
+          foneBody === foneResponsavel ||
+          semDDI(foneBody) === semDDI(foneResponsavel) ||
+          sem9(foneBody) === sem9(foneResponsavel)
+        );
+        if (!isToResponsavel) {
+          await addToHistory(body.phone, "assistant", "[DIRETO] " + body.text.message);
+          broadcastSSE("leads_update", { phone: body.phone });
+        }
+      }
+      return;
+    }
+
+    // Detecta se é o responsável enviando um relay
     const ehResponsavel   = foneResponsavel.length > 5 &&
                             (foneBody === foneResponsavel ||
                              semDDI(foneBody) === semDDI(foneResponsavel) ||
@@ -1455,10 +1483,21 @@ async function notificarResponsavel(assunto, corpo) {
 }
 
 // ─── API: CONTROLE DA OLIVIA POR CHAT ────────────────────────────────────────
+app.get("/api/stream", (req, res) => {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders();
+  sseClients.add(res);
+  res.write("data: {\"type\":\"connected\"}\n\n");
+  const ping = setInterval(() => { try { res.write(": ping\n\n"); } catch {} }, 25000);
+  req.on("close", () => { sseClients.delete(res); clearInterval(ping); });
+});
+
 app.post("/api/leads/:phone/toggle-olivia", async (req, res) => {
   try {
     const phone = req.params.phone;
-    const { ativa } = req.body;
+    const { ativa, mensagem } = req.body;
     if (typeof ativa !== "boolean") return res.status(400).json({ error: "ativa deve ser boolean" });
     await db.query(
       `INSERT INTO leads (phone, olivia_ativa) VALUES ($1, $2)
@@ -1466,6 +1505,15 @@ app.post("/api/leads/:phone/toggle-olivia", async (req, res) => {
       [phone, ativa]
     );
     console.log("[OLIVIA] Toggle:", phone, "→", ativa);
+
+    if (ativa && mensagem?.trim()) {
+      const texto = mensagem.trim();
+      await sendZAPIMessage(phone, texto);
+      await addToHistory(phone, "assistant", texto);
+      console.log("[OLIVIA] Mensagem de reativação enviada para:", phone);
+    }
+
+    broadcastSSE("leads_update", { phone, olivia_ativa: ativa });
     res.json({ ok: true, phone, olivia_ativa: ativa });
   } catch (err) {
     console.error("[TOGGLE] Erro:", err.message);
