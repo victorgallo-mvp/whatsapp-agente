@@ -568,6 +568,7 @@
       textarea.value = "";
       textarea.style.height = "42px";
       toast("Mensagem enviada");
+      await loadMsgs();
     } catch (e) {
       toast("Erro ao enviar mensagem");
       console.error(e);
@@ -594,6 +595,8 @@
   // ─── INIT ───────────────────────────────────────────────────────────
   fetchLeads();
   connectSSE();
+  // Polling de segurança: atualiza mesmo se o nginx bufferizar o SSE
+  setInterval(() => { fetchLeads(); loadMsgs(true); }, 6000);
 </script>
 </body>
 </html>
