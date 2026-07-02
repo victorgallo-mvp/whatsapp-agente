@@ -4,9 +4,11 @@ const axios      = require("axios");
 const nodemailer = require("nodemailer");
 const { Pool }   = require("pg");
 const cron       = require("node-cron");
+const path       = require("path");
 
 const app = express();
 app.use(express.json());
+app.use(express.static(path.join(__dirname, "public")));
 
 const ANTHROPIC_API_KEY  = process.env.ANTHROPIC_API_KEY;
 const EVOLUTION_URL      = (process.env.EVOLUTION_URL || "").replace(/\/$/, "");
@@ -1474,13 +1476,51 @@ app.post("/api/leads/:phone/toggle-olivia", async (req, res) => {
 app.get("/api/leads", async (req, res) => {
   try {
     const result = await db.query(
-      `SELECT phone, nome, empresa, stage, olivia_ativa, last_interaction_at, total_interactions
-       FROM leads ORDER BY last_interaction_at DESC NULLS LAST LIMIT 100`
+      `SELECT l.phone, l.nome, l.empresa, l.stage, l.olivia_ativa,
+              l.last_interaction_at, l.total_interactions,
+              m.content AS ultima_mensagem, m.role AS ultima_role
+       FROM leads l
+       LEFT JOIN LATERAL (
+         SELECT content, role FROM mensagens WHERE user_id = l.phone ORDER BY created_at DESC LIMIT 1
+       ) m ON TRUE
+       ORDER BY l.last_interaction_at DESC NULLS LAST LIMIT 100`
     );
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+app.get("/api/leads/:phone/msgs", async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT role, content, created_at FROM mensagens WHERE user_id = $1 ORDER BY created_at ASC LIMIT 150`,
+      [req.params.phone]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/leads/:phone/send", async (req, res) => {
+  try {
+    const phone = req.params.phone;
+    const { text } = req.body;
+    if (!text?.trim()) return res.status(400).json({ error: "text obrigatorio" });
+    await sendZAPIMessage(phone, text.trim());
+    const registroHistorico = "[RELAY:MENSAGEM] " + text.trim();
+    await addToHistory(phone, "assistant", registroHistorico);
+    console.log("[DASHBOARD] Mensagem manual enviada para:", phone);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("[DASHBOARD] Erro ao enviar:", err.response?.data || err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/dashboard", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "dashboard.html"));
 });
 
 // ─── ADMIN: INDEXAR BASE DE CONHECIMENTO ─────────────────────────────────────

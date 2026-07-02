@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Comunynk — Painel Olivia</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #f0f2f5;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    color: #111;
+  }
+
+  /* ─── HEADER ─────────────────────────────────────── */
+  header {
+    background: #1a1a2e;
+    color: #fff;
+    padding: 0 20px;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+  header h1 { font-size: 16px; font-weight: 600; letter-spacing: .5px; }
+  header span { font-size: 12px; opacity: .55; margin-left: auto; }
+
+  /* ─── LAYOUT ─────────────────────────────────────── */
+  .layout {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* ─── SIDEBAR ────────────────────────────────────── */
+  .sidebar {
+    width: 320px;
+    background: #fff;
+    border-right: 1px solid #e5e7eb;
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+  }
+
+  .search-wrap {
+    padding: 12px 14px;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  .search-wrap input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 13px;
+    outline: none;
+    background: #f9fafb;
+  }
+  .search-wrap input:focus { border-color: #6366f1; background: #fff; }
+
+  .lead-list {
+    overflow-y: auto;
+    flex: 1;
+  }
+
+  .lead-item {
+    padding: 12px 14px;
+    cursor: pointer;
+    border-bottom: 1px solid #f3f4f6;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    transition: background .12s;
+  }
+  .lead-item:hover { background: #f5f5f5; }
+  .lead-item.active { background: #eef2ff; }
+
+  .lead-top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .lead-name {
+    font-size: 13.5px;
+    font-weight: 600;
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .lead-time {
+    font-size: 11px;
+    color: #9ca3af;
+    white-space: nowrap;
+  }
+
+  .lead-preview {
+    font-size: 12px;
+    color: #6b7280;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .lead-badges {
+    display: flex;
+    gap: 5px;
+    align-items: center;
+    margin-top: 2px;
+  }
+  .badge {
+    font-size: 10px;
+    padding: 1px 7px;
+    border-radius: 999px;
+    font-weight: 600;
+    letter-spacing: .2px;
+  }
+  .badge-on  { background: #dcfce7; color: #166534; }
+  .badge-off { background: #fee2e2; color: #991b1b; }
+  .badge-stage { background: #e0e7ff; color: #3730a3; }
+
+  .empty-state {
+    padding: 40px 20px;
+    text-align: center;
+    color: #9ca3af;
+    font-size: 13px;
+  }
+
+  /* ─── MAIN PANEL ─────────────────────────────────── */
+  .main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .placeholder {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #9ca3af;
+    font-size: 14px;
+  }
+
+  /* ─── CHAT HEADER ────────────────────────────────── */
+  .chat-header {
+    background: #fff;
+    border-bottom: 1px solid #e5e7eb;
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+  .chat-info { flex: 1; }
+  .chat-name { font-size: 15px; font-weight: 600; }
+  .chat-sub  { font-size: 12px; color: #6b7280; margin-top: 2px; }
+
+  .toggle-btn {
+    padding: 7px 16px;
+    border-radius: 8px;
+    border: none;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity .15s;
+  }
+  .toggle-btn:hover { opacity: .82; }
+  .toggle-on  { background: #ef4444; color: #fff; }
+  .toggle-off { background: #22c55e; color: #fff; }
+
+  /* ─── MESSAGES ───────────────────────────────────── */
+  .messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: #f0f2f5;
+  }
+
+  .msg-row {
+    display: flex;
+    flex-direction: column;
+    max-width: 72%;
+  }
+  .msg-row.user   { align-self: flex-end; align-items: flex-end; }
+  .msg-row.assistant { align-self: flex-start; align-items: flex-start; }
+  .msg-row.system { align-self: center; max-width: 90%; }
+
+  .msg-bubble {
+    padding: 8px 12px;
+    border-radius: 12px;
+    font-size: 13.5px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .msg-row.user      .msg-bubble { background: #dcf8c6; border-bottom-right-radius: 4px; }
+  .msg-row.assistant .msg-bubble { background: #fff; border-bottom-left-radius: 4px; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+  .msg-row.system    .msg-bubble { background: #e0e7ff; color: #3730a3; font-size: 12px; text-align: center; border-radius: 8px; }
+
+  .msg-time {
+    font-size: 10.5px;
+    color: #9ca3af;
+    margin-top: 3px;
+  }
+
+  /* ─── INPUT ──────────────────────────────────────── */
+  .input-area {
+    background: #fff;
+    border-top: 1px solid #e5e7eb;
+    padding: 12px 16px;
+    display: flex;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+  .input-area textarea {
+    flex: 1;
+    resize: none;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    padding: 9px 12px;
+    font-size: 13.5px;
+    font-family: inherit;
+    outline: none;
+    height: 42px;
+    max-height: 120px;
+    overflow-y: auto;
+    line-height: 1.4;
+  }
+  .input-area textarea:focus { border-color: #6366f1; }
+  .send-btn {
+    padding: 0 20px;
+    background: #6366f1;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .send-btn:hover { background: #4f46e5; }
+  .send-btn:disabled { background: #c7d2fe; cursor: default; }
+
+  /* ─── TOAST ──────────────────────────────────────── */
+  #toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1a1a2e;
+    color: #fff;
+    padding: 9px 20px;
+    border-radius: 8px;
+    font-size: 13px;
+    opacity: 0;
+    transition: opacity .25s;
+    pointer-events: none;
+    z-index: 9999;
+  }
+  #toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Comunynk · Painel Olivia</h1>
+  <span id="last-update">Aguardando...</span>
+</header>
+
+<div class="layout">
+  <!-- ─── SIDEBAR ─────────────────────────────────────── -->
+  <aside class="sidebar">
+    <div class="search-wrap">
+      <input type="text" id="search" placeholder="Buscar por nome ou telefone...">
+    </div>
+    <div class="lead-list" id="lead-list">
+      <div class="empty-state">Carregando leads...</div>
+    </div>
+  </aside>
+
+  <!-- ─── MAIN ─────────────────────────────────────────── -->
+  <main class="main" id="main">
+    <div class="placeholder" id="placeholder">Selecione um lead para ver a conversa</div>
+
+    <div id="chat-panel" style="display:none; flex-direction:column; flex:1; overflow:hidden;">
+      <div class="chat-header">
+        <div class="chat-info">
+          <div class="chat-name" id="chat-name">—</div>
+          <div class="chat-sub"  id="chat-sub">—</div>
+        </div>
+        <button class="toggle-btn" id="toggle-btn" onclick="toggleOlivia()">—</button>
+      </div>
+
+      <div class="messages" id="messages"></div>
+
+      <div class="input-area">
+        <textarea id="msg-input" placeholder="Mensagem manual (enviada como assistente)..." onkeydown="handleKey(event)"></textarea>
+        <button class="send-btn" id="send-btn" onclick="sendMsg()">Enviar</button>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div id="toast"></div>
+
+<script>
+  let leads       = [];
+  let activePhone = null;
+  let oliviaAtiva = true;
+  let msgsCache   = [];
+  let pollTimer   = null;
+
+  // ─── UTILS ────────────────────────────────────────────
+  function timeAgo(iso) {
+    if (!iso) return "";
+    const diff = Date.now() - new Date(iso).getTime();
+    const m = Math.floor(diff / 60000);
+    if (m < 1)   return "agora";
+    if (m < 60)  return m + "m";
+    const h = Math.floor(m / 60);
+    if (h < 24)  return h + "h";
+    return Math.floor(h / 24) + "d";
+  }
+
+  function fmtTime(iso) {
+    if (!iso) return "";
+    const d = new Date(iso);
+    return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) +
+           " · " + d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+  }
+
+  function toast(msg, ms = 2500) {
+    const el = document.getElementById("toast");
+    el.textContent = msg;
+    el.classList.add("show");
+    setTimeout(() => el.classList.remove("show"), ms);
+  }
+
+  function previewMsg(content, role) {
+    if (!content) return "";
+    const prefix = role === "user" ? "" : "Olivia: ";
+    const clean  = content.replace(/\[.*?\]/g, "").trim();
+    return prefix + (clean.length > 55 ? clean.slice(0, 55) + "…" : clean);
+  }
+
+  // ─── LEADS ────────────────────────────────────────────
+  async function fetchLeads() {
+    try {
+      const r = await fetch("/api/leads");
+      leads   = await r.json();
+      renderLeads();
+      document.getElementById("last-update").textContent =
+        "Atualizado: " + new Date().toLocaleTimeString("pt-BR");
+    } catch (e) {
+      console.error("Erro ao buscar leads:", e);
+    }
+  }
+
+  function renderLeads() {
+    const q   = document.getElementById("search").value.toLowerCase();
+    const list = document.getElementById("lead-list");
+    const filtered = leads.filter(l =>
+      !q ||
+      (l.nome   || "").toLowerCase().includes(q) ||
+      (l.phone  || "").includes(q) ||
+      (l.empresa || "").toLowerCase().includes(q)
+    );
+
+    if (!filtered.length) {
+      list.innerHTML = '<div class="empty-state">Nenhum lead encontrado.</div>';
+      return;
+    }
+
+    list.innerHTML = filtered.map(l => `
+      <div class="lead-item ${l.phone === activePhone ? "active" : ""}"
+           onclick="selectLead('${l.phone}')">
+        <div class="lead-top">
+          <span class="lead-name">${l.nome || l.phone}</span>
+          <span class="lead-time">${timeAgo(l.last_interaction_at)}</span>
+        </div>
+        <div class="lead-preview">${previewMsg(l.ultima_mensagem, l.ultima_role)}</div>
+        <div class="lead-badges">
+          <span class="badge ${l.olivia_ativa !== false ? "badge-on" : "badge-off"}">
+            ${l.olivia_ativa !== false ? "Olivia ON" : "Olivia OFF"}
+          </span>
+          ${l.stage ? `<span class="badge badge-stage">${l.stage}</span>` : ""}
+        </div>
+      </div>
+    `).join("");
+  }
+
+  document.getElementById("search").addEventListener("input", renderLeads);
+
+  // ─── SELECT LEAD ──────────────────────────────────────
+  async function selectLead(phone) {
+    activePhone = phone;
+    renderLeads();
+
+    const lead = leads.find(l => l.phone === phone) || {};
+    oliviaAtiva = lead.olivia_ativa !== false;
+
+    document.getElementById("placeholder").style.display = "none";
+    const panel = document.getElementById("chat-panel");
+    panel.style.display = "flex";
+
+    document.getElementById("chat-name").textContent =
+      lead.nome || phone;
+    document.getElementById("chat-sub").textContent =
+      [lead.empresa, phone].filter(Boolean).join(" · ");
+
+    updateToggleBtn();
+    await loadMsgs();
+    scheduleLeadPoll();
+  }
+
+  function updateToggleBtn() {
+    const btn = document.getElementById("toggle-btn");
+    if (oliviaAtiva) {
+      btn.textContent = "Desativar Olivia";
+      btn.className   = "toggle-btn toggle-on";
+    } else {
+      btn.textContent = "Ativar Olivia";
+      btn.className   = "toggle-btn toggle-off";
+    }
+  }
+
+  // ─── MESSAGES ─────────────────────────────────────────
+  async function loadMsgs(silent = false) {
+    if (!activePhone) return;
+    try {
+      const r    = await fetch(`/api/leads/${activePhone}/msgs`);
+      const msgs = await r.json();
+
+      const changed = JSON.stringify(msgs) !== JSON.stringify(msgsCache);
+      if (!changed) return;
+      msgsCache = msgs;
+
+      const box = document.getElementById("messages");
+      const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
+
+      box.innerHTML = msgs.map(m => {
+        const rowClass = m.role === "user" ? "user"
+                       : m.role === "assistant" ? "assistant"
+                       : "system";
+        return `
+          <div class="msg-row ${rowClass}">
+            <div class="msg-bubble">${escHtml(m.content)}</div>
+            <div class="msg-time">${fmtTime(m.created_at)}</div>
+          </div>
+        `;
+      }).join("");
+
+      if (atBottom || !silent) {
+        box.scrollTop = box.scrollHeight;
+      }
+    } catch (e) {
+      console.error("Erro ao carregar mensagens:", e);
+    }
+  }
+
+  function escHtml(s) {
+    return (s || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  // ─── POLLING ──────────────────────────────────────────
+  function scheduleLeadPoll() {
+    clearInterval(pollTimer);
+    pollTimer = setInterval(async () => {
+      await fetchLeads();
+      await loadMsgs(true);
+    }, 4000);
+  }
+
+  // ─── TOGGLE OLIVIA ────────────────────────────────────
+  async function toggleOlivia() {
+    if (!activePhone) return;
+    const novaAtiva = !oliviaAtiva;
+    try {
+      const r = await fetch(`/api/leads/${activePhone}/toggle-olivia`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ativa: novaAtiva }),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      oliviaAtiva = novaAtiva;
+      updateToggleBtn();
+
+      const lead = leads.find(l => l.phone === activePhone);
+      if (lead) lead.olivia_ativa = novaAtiva;
+      renderLeads();
+      toast(novaAtiva ? "Olivia ativada" : "Olivia desativada");
+    } catch (e) {
+      toast("Erro ao alterar Olivia");
+      console.error(e);
+    }
+  }
+
+  // ─── SEND ─────────────────────────────────────────────
+  async function sendMsg() {
+    const textarea = document.getElementById("msg-input");
+    const text     = textarea.value.trim();
+    if (!text || !activePhone) return;
+
+    const btn = document.getElementById("send-btn");
+    btn.disabled = true;
+
+    try {
+      const r = await fetch(`/api/leads/${activePhone}/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      textarea.value = "";
+      textarea.style.height = "42px";
+      await loadMsgs();
+      toast("Mensagem enviada");
+    } catch (e) {
+      toast("Erro ao enviar mensagem");
+      console.error(e);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  function handleKey(e) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendMsg();
+    }
+    const ta = e.target;
+    ta.style.height = "42px";
+    ta.style.height = Math.min(ta.scrollHeight, 120) + "px";
+  }
+
+  // ─── INIT ─────────────────────────────────────────────
+  fetchLeads();
+  setInterval(fetchLeads, 4000);
+</script>
+</body>
+</html>
