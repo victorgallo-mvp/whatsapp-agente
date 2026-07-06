@@ -887,7 +887,8 @@ app.post("/webhook", async (req, res) => {
         }
       }
 
-      enfileirarMensagem(userId, { content: "[o cliente enviou uma imagem" + caption + descricao + "]" });
+      const urlTag = body.image.imageUrl ? " | url: " + body.image.imageUrl : "";
+      enfileirarMensagem(userId, { content: "[o cliente enviou uma imagem" + caption + descricao + urlTag + "]" });
       return;
     }
 
@@ -1564,6 +1565,23 @@ app.post("/api/leads/:phone/send", async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     console.error("[DASHBOARD] Erro ao enviar:", err.response?.data || err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/leads/:phone/send-image", async (req, res) => {
+  try {
+    const phone = req.params.phone;
+    const { imageUrl, caption } = req.body;
+    if (!imageUrl?.trim()) return res.status(400).json({ error: "imageUrl obrigatorio" });
+    await wppSendImage(phone, imageUrl.trim(), caption || "");
+    const registroHistorico = "[RELAY:ARTE] A equipe enviou uma arte para avaliação." +
+      (caption ? " " + caption : "") + " | url: " + imageUrl.trim();
+    await addToHistory(phone, "assistant", registroHistorico);
+    console.log("[DASHBOARD] Imagem enviada para:", phone);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("[DASHBOARD] Erro ao enviar imagem:", err.response?.data || err.message);
     res.status(500).json({ error: err.message });
   }
 });
