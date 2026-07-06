@@ -887,8 +887,7 @@ app.post("/webhook", async (req, res) => {
         }
       }
 
-      const urlTag = body.image.imageUrl ? " | url: " + body.image.imageUrl : "";
-      enfileirarMensagem(userId, { content: "[o cliente enviou uma imagem" + caption + descricao + urlTag + "]" });
+      enfileirarMensagem(userId, { content: "[o cliente enviou uma imagem" + caption + descricao + "]" });
       return;
     }
 

@@ -111,12 +111,6 @@
   .msg-row.assistant .msg-bubble { background: #fff; border-bottom-left-radius: 4px; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
   .msg-row.system    .msg-bubble { background: #e0e7ff; color: #3730a3; font-size: 12px; text-align: center; border-radius: 8px; }
 
-  .msg-img {
-    max-width: 280px; max-height: 260px; border-radius: 10px;
-    object-fit: cover; display: block; cursor: pointer;
-    margin-bottom: 4px;
-  }
-  .msg-img-err { font-size: 11px; color: #9ca3af; font-style: italic; }
   .msg-tag  { font-size: 10px; color: #9ca3af; margin-bottom: 1px; }
   .msg-time { font-size: 10.5px; color: #9ca3af; margin-top: 3px; }
 
@@ -202,13 +196,6 @@
   .btn-cancel    { background: #f3f4f6; color: #374151; }
   .btn-cancel:hover { background: #e5e7eb; }
 
-  /* Lightbox */
-  #lightbox {
-    display: none; position: fixed; inset: 0; background: rgba(0,0,0,.85);
-    z-index: 200; align-items: center; justify-content: center; cursor: zoom-out;
-  }
-  #lightbox.open { display: flex; }
-  #lightbox img { max-width: 92vw; max-height: 92vh; border-radius: 8px; object-fit: contain; }
 
   /* ─── TOAST ──────────────────────────────────────── */
   #toast {
@@ -296,10 +283,6 @@
   </div>
 </div>
 
-<!-- Lightbox -->
-<div id="lightbox" onclick="closeLightbox()">
-  <img id="lightbox-img" src="" alt="">
-</div>
 
 <div id="toast"></div>
 
@@ -352,12 +335,6 @@
     return prefix + (clean.length > 55 ? clean.slice(0, 55) + "…" : clean);
   }
 
-  // Extrai URL de imagem do content (| url: https://...)
-  function extractImgUrl(content) {
-    const m = content.match(/\|\s*url:\s*(https?:\/\/[^\]|\s]+)/);
-    return m ? m[1].trim() : null;
-  }
-
   // Determina tag de remetente
   function msgTag(content, role) {
     if (role !== "assistant") return "";
@@ -375,32 +352,14 @@
   function renderBubble(m) {
     const rowClass = m.role === "user" ? "user" : m.role === "assistant" ? "assistant" : "system";
     const tag      = msgTag(m.content, m.role);
-    const imgUrl   = extractImgUrl(m.content);
 
-    // Remove prefixos de tag e a parte | url: ... do texto visível
     let clean = m.content
-      .replace(/^\[[^\]]+\]\s*/, "")  // remove [TAG] no início
-      .replace(/\|\s*url:\s*https?:\/\/\S+/g, "") // remove | url: URL
-      .replace(/\[o cliente enviou uma imagem[^\]]*\]/g, "📷 Imagem recebida")
+      .replace(/^\[[^\]]+\]\s*/, "")
+      .replace(/\[o cliente enviou uma imagem[^\]]*\]/g, "📷 Imagem recebida — ver no WhatsApp")
+      .replace(/\[RELAY:ARTE\][^\n]*/g, "📷 Imagem enviada — ver no WhatsApp")
       .trim();
 
-    let imgHtml = "";
-    if (imgUrl) {
-      imgHtml = `<img class="msg-img" src="${escHtml(imgUrl)}" alt="Imagem" onclick="openLightbox('${escHtml(imgUrl)}')" onerror="this.style.display='none';this.nextElementSibling.style.display='block'"><span class="msg-img-err" style="display:none">Imagem não disponível</span>`;
-    }
-
-    const bubbleInner = [imgHtml, clean ? escHtml(clean) : ""].filter(Boolean).join("<br>");
-
-    return `<div class="msg-row ${rowClass}">${tag ? `<div class="msg-tag">${escHtml(tag)}</div>` : ""}<div class="msg-bubble">${bubbleInner}</div><div class="msg-time">${fmtTime(m.created_at)}</div></div>`;
-  }
-
-  // ─── LIGHTBOX ──────────────────────────────────────────────────────
-  function openLightbox(url) {
-    document.getElementById("lightbox-img").src = url;
-    document.getElementById("lightbox").classList.add("open");
-  }
-  function closeLightbox() {
-    document.getElementById("lightbox").classList.remove("open");
+    return `<div class="msg-row ${rowClass}">${tag ? `<div class="msg-tag">${escHtml(tag)}</div>` : ""}<div class="msg-bubble">${escHtml(clean)}</div><div class="msg-time">${fmtTime(m.created_at)}</div></div>`;
   }
 
   // ─── IMAGE UPLOAD ───────────────────────────────────────────────────
