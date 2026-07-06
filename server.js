@@ -1544,10 +1544,10 @@ app.get("/api/leads", async (req, res) => {
 app.get("/api/leads/:phone/msgs", async (req, res) => {
   try {
     const result = await db.query(
-      `SELECT role, content, created_at FROM mensagens WHERE user_id = $1 ORDER BY created_at ASC LIMIT 150`,
+      `SELECT role, content, created_at FROM mensagens WHERE user_id = $1 ORDER BY created_at DESC LIMIT 150`,
       [req.params.phone]
     );
-    res.json(result.rows);
+    res.json(result.rows.reverse());
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

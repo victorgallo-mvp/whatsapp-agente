@@ -369,22 +369,12 @@
 
     let imgHtml = "";
     if (imgUrl) {
-      imgHtml = `<img class="msg-img" src="${escHtml(imgUrl)}" alt="Imagem"
-        onclick="openLightbox('${escHtml(imgUrl)}')"
-        onerror="this.style.display='none'; this.nextElementSibling.style.display='block'">
-        <span class="msg-img-err" style="display:none">Imagem não disponível (URL expirada)</span>`;
+      imgHtml = `<img class="msg-img" src="${escHtml(imgUrl)}" alt="Imagem" onclick="openLightbox('${escHtml(imgUrl)}')" onerror="this.style.display='none';this.nextElementSibling.style.display='block'"><span class="msg-img-err" style="display:none">Imagem não disponível</span>`;
     }
 
-    return `
-      <div class="msg-row ${rowClass}">
-        ${tag ? `<div class="msg-tag">${escHtml(tag)}</div>` : ""}
-        <div class="msg-bubble">
-          ${imgHtml}
-          ${clean ? escHtml(clean) : ""}
-        </div>
-        <div class="msg-time">${fmtTime(m.created_at)}</div>
-      </div>
-    `;
+    const bubbleInner = [imgHtml, clean ? escHtml(clean) : ""].filter(Boolean).join("<br>");
+
+    return `<div class="msg-row ${rowClass}">${tag ? `<div class="msg-tag">${escHtml(tag)}</div>` : ""}<div class="msg-bubble">${bubbleInner}</div><div class="msg-time">${fmtTime(m.created_at)}</div></div>`;
   }
 
   // ─── LIGHTBOX ──────────────────────────────────────────────────────
