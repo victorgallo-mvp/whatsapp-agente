@@ -1572,11 +1572,41 @@ app.post("/api/leads/:phone/send", async (req, res) => {
 app.post("/api/leads/:phone/send-image", async (req, res) => {
   try {
     const phone = req.params.phone;
-    const { imageUrl, caption } = req.body;
-    if (!imageUrl?.trim()) return res.status(400).json({ error: "imageUrl obrigatorio" });
-    await wppSendImage(phone, imageUrl.trim(), caption || "");
-    const registroHistorico = "[RELAY:ARTE] A equipe enviou uma arte para avaliação." +
-      (caption ? " " + caption : "") + " | url: " + imageUrl.trim();
+    const { imageUrl, imageBase64, mimeType, caption } = req.body;
+
+    if (!imageUrl && !imageBase64)
+      return res.status(400).json({ error: "imageUrl ou imageBase64 obrigatorio" });
+
+    let payload;
+    if (imageBase64) {
+      const mime = mimeType || "image/jpeg";
+      const ext  = mime.split("/")[1] || "jpg";
+      payload = {
+        number:    sanitizePhone(phone),
+        mediatype: "image",
+        mimetype:  mime,
+        fileName:  "imagem." + ext,
+        media:     imageBase64,
+        caption:   caption || "",
+      };
+    } else {
+      payload = {
+        number:    sanitizePhone(phone),
+        mediatype: "image",
+        media:     imageUrl.trim(),
+        caption:   caption || "",
+      };
+    }
+
+    await axios.post(
+      `${EVOLUTION_URL}/message/sendMedia/${EVOLUTION_INSTANCE}`,
+      payload,
+      { headers: EVOLUTION_HEADERS() }
+    );
+
+    const registroHistorico = "[RELAY:ARTE] A equipe enviou uma imagem." +
+      (caption ? " " + caption : "") +
+      (imageUrl ? " | url: " + imageUrl.trim() : "");
     await addToHistory(phone, "assistant", registroHistorico);
     console.log("[DASHBOARD] Imagem enviada para:", phone);
     res.json({ ok: true });
