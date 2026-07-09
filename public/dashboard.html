@@ -205,6 +205,56 @@
     transition: opacity .25s; pointer-events: none; z-index: 9999;
   }
   #toast.show { opacity: 1; }
+
+  /* ─── PENDENTES / ACTION TAGS ────────────────────── */
+  .section-header {
+    padding: 7px 14px 6px; font-size: 10.5px; font-weight: 700;
+    letter-spacing: .6px; text-transform: uppercase; color: #9ca3af;
+    display: flex; align-items: center; justify-content: space-between;
+    cursor: pointer; user-select: none;
+    border-bottom: 1px solid #f3f4f6;
+    position: sticky; top: 0; background: #fff; z-index: 1;
+  }
+  .section-header.pendentes { color: #b45309; background: #fffbeb; border-color: #fde68a; }
+  .section-header.all-leads { cursor: default; }
+  .section-count {
+    background: #ef4444; color: #fff; border-radius: 999px;
+    font-size: 10px; padding: 1px 6px; font-weight: 700; margin-left: 5px;
+  }
+  .section-toggle { font-size: 10px; color: #9ca3af; }
+  .section-body.collapsed { display: none; }
+
+  .action-tag {
+    font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 5px;
+    display: inline-flex; align-items: center; gap: 3px; white-space: nowrap;
+  }
+  .action-tag.urgente  { background: #fee2e2; color: #991b1b; }
+  .action-tag.proposta { background: #fef3c7; color: #92400e; }
+  .action-tag.fechar   { background: #dcfce7; color: #166534; }
+  .action-tag.visita   { background: #e0f2fe; color: #0c4a6e; }
+  .action-tag.ativo    { background: #f3f4f6; color: #6b7280; }
+
+  /* ─── LEAD SUMMARY PANEL ─────────────────────────── */
+  .lead-summary-panel {
+    background: #fff; border-bottom: 1px solid #e5e7eb;
+    padding: 0 20px; flex-shrink: 0; overflow: hidden;
+    max-height: 0; transition: max-height .2s ease;
+  }
+  .lead-summary-panel.open { max-height: 110px; }
+  .lead-summary-inner {
+    padding: 10px 0; display: flex; gap: 20px;
+    align-items: flex-start; flex-wrap: wrap;
+  }
+  .summary-field { display: flex; flex-direction: column; gap: 2px; }
+  .summary-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: #9ca3af; }
+  .summary-value { font-size: 12.5px; color: #111; }
+  .summary-text  { font-size: 12px; color: #6b7280; font-style: italic; flex: 1; min-width: 180px; line-height: 1.4; }
+  .summary-toggle-btn {
+    font-size: 11px; padding: 3px 10px; border-radius: 6px;
+    border: 1px solid #e5e7eb; background: #f9fafb; color: #6b7280;
+    cursor: pointer; font-family: inherit; white-space: nowrap;
+  }
+  .summary-toggle-btn:hover { background: #e5e7eb; }
 </style>
 </head>
 <body>
@@ -234,7 +284,11 @@
           <div class="chat-sub"  id="chat-sub">—</div>
         </div>
         <button class="toggle-btn" id="toggle-btn" onclick="clickToggle()">—</button>
+        <button class="summary-toggle-btn" id="summary-toggle-btn" onclick="toggleSummary()" style="display:none">Resumo ▼</button>
       </div>
+
+      <!-- Lead summary strip -->
+      <div class="lead-summary-panel" id="summary-panel"></div>
 
       <div class="messages" id="messages"></div>
 
@@ -287,12 +341,14 @@
 <div id="toast"></div>
 
 <script>
-  let leads        = [];
-  let activePhone  = null;
-  let oliviaAtiva  = true;
-  let msgsCache    = [];
-  let unreadPhones = new Set();
-  let pollFallback = null;
+  let leads              = [];
+  let activePhone        = null;
+  let oliviaAtiva        = true;
+  let msgsCache          = [];
+  let unreadPhones       = new Set();
+  let pollFallback       = null;
+  let pendentesCollapsed = false;
+  let summaryOpen        = false;
 
   // ─── UTILS ─────────────────────────────────────────────────────────
   function timeAgo(iso) {
@@ -424,9 +480,27 @@
     }
   }
 
+  function classifyLead(lead) {
+    if (lead.olivia_ativa === false) return { key: "urgente",  icon: "⚠️", label: "Atendimento urgente", pendente: true };
+    if (lead.stage === "fechando")   return { key: "fechar",   icon: "✅", label: "Fechar negócio",      pendente: true };
+    if (lead.stage === "qualificado")return { key: "proposta", icon: "📋", label: "Enviar proposta",     pendente: true };
+    if (lead.stage === "qualificando")return { key: "visita",  icon: "📅", label: "Visita agendada",     pendente: true };
+    return { key: "ativo", icon: "💬", label: "Em atendimento", pendente: false };
+  }
+
+  function leadItemHtml(l) {
+    const cls = classifyLead(l);
+    return `<div class="lead-item ${l.phone === activePhone ? "active" : ""} ${unreadPhones.has(l.phone) && l.phone !== activePhone ? "unread" : ""}" onclick="selectLead('${escHtml(l.phone)}')"><div class="lead-top"><span class="lead-name">${escHtml(l.nome || l.phone)}</span><span class="lead-time">${timeAgo(l.last_interaction_at)}</span></div><div class="lead-preview">${escHtml(previewMsg(l.ultima_mensagem, l.ultima_role))}</div><div class="lead-badges"><span class="action-tag ${cls.key}">${cls.icon} ${escHtml(cls.label)}</span>${l.empresa ? `<span class="badge badge-stage" style="max-width:90px;overflow:hidden;text-overflow:ellipsis">${escHtml(l.empresa)}</span>` : ""}</div></div>`;
+  }
+
+  function togglePendentes() {
+    pendentesCollapsed = !pendentesCollapsed;
+    renderLeads();
+  }
+
   function renderLeads() {
-    const q      = document.getElementById("search").value.toLowerCase();
-    const list   = document.getElementById("lead-list");
+    const q        = document.getElementById("search").value.toLowerCase();
+    const list     = document.getElementById("lead-list");
     const filtered = leads.filter(l =>
       !q ||
       (l.nome    || "").toLowerCase().includes(q) ||
@@ -439,25 +513,60 @@
       return;
     }
 
-    list.innerHTML = filtered.map(l => `
-      <div class="lead-item ${l.phone === activePhone ? "active" : ""} ${unreadPhones.has(l.phone) && l.phone !== activePhone ? "unread" : ""}"
-           onclick="selectLead('${escHtml(l.phone)}')">
-        <div class="lead-top">
-          <span class="lead-name">${escHtml(l.nome || l.phone)}</span>
-          <span class="lead-time">${timeAgo(l.last_interaction_at)}</span>
-        </div>
-        <div class="lead-preview">${escHtml(previewMsg(l.ultima_mensagem, l.ultima_role))}</div>
-        <div class="lead-badges">
-          <span class="badge ${l.olivia_ativa !== false ? "badge-on" : "badge-off"}">
-            ${l.olivia_ativa !== false ? "Olivia ON" : "Olivia OFF"}
-          </span>
-          ${l.stage ? `<span class="badge badge-stage">${escHtml(l.stage)}</span>` : ""}
-        </div>
-      </div>
-    `).join("");
+    const pendentes = filtered.filter(l => classifyLead(l).pendente);
+    let html = "";
+
+    if (pendentes.length) {
+      html += `<div class="section-header pendentes" onclick="togglePendentes()"><span>⚠️ Pendentes<span class="section-count">${pendentes.length}</span></span><span class="section-toggle">${pendentesCollapsed ? "▼" : "▲"}</span></div><div class="section-body ${pendentesCollapsed ? "collapsed" : ""}">${pendentes.map(leadItemHtml).join("")}</div>`;
+    }
+
+    html += `<div class="section-header all-leads"><span>Todos os leads</span></div>${filtered.map(leadItemHtml).join("")}`;
+
+    list.innerHTML = html;
   }
 
   document.getElementById("search").addEventListener("input", renderLeads);
+
+  // ─── LEAD SUMMARY PANEL ─────────────────────────────────────────────
+  function updateSummaryPanel(lead) {
+    const panel  = document.getElementById("summary-panel");
+    const btn    = document.getElementById("summary-toggle-btn");
+    const prof   = lead.profile || {};
+    const produto    = prof.produto_interesse;
+    const orcamento  = prof.orcamento_estimado;
+    const resumo     = lead.last_summary;
+
+    if (!produto && !orcamento && !resumo) {
+      panel.innerHTML = "";
+      panel.classList.remove("open");
+      btn.style.display = "none";
+      return;
+    }
+
+    let fields = "";
+    if (produto)   fields += `<div class="summary-field"><span class="summary-label">Produto</span><span class="summary-value">${escHtml(produto)}</span></div>`;
+    if (orcamento) fields += `<div class="summary-field"><span class="summary-label">Orçamento est.</span><span class="summary-value">${escHtml(orcamento)}</span></div>`;
+    if (resumo)    fields += `<div class="summary-text">${escHtml(resumo)}</div>`;
+
+    panel.innerHTML = `<div class="lead-summary-inner">${fields}</div>`;
+    summaryOpen = true;
+    panel.classList.add("open");
+    btn.style.display = "";
+    btn.textContent = "Resumo ▲";
+  }
+
+  function toggleSummary() {
+    summaryOpen = !summaryOpen;
+    const panel = document.getElementById("summary-panel");
+    const btn   = document.getElementById("summary-toggle-btn");
+    if (summaryOpen) {
+      panel.classList.add("open");
+      btn.textContent = "Resumo ▲";
+    } else {
+      panel.classList.remove("open");
+      btn.textContent = "Resumo ▼";
+    }
+  }
 
   // ─── SELECT LEAD ────────────────────────────────────────────────────
   async function selectLead(phone) {
@@ -478,6 +587,7 @@
       [lead.empresa, phone].filter(Boolean).join(" · ");
 
     updateToggleBtn();
+    updateSummaryPanel(lead);
     toggleImgRow(false);
     await loadMsgs();
   }

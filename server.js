@@ -1527,6 +1527,7 @@ app.get("/api/leads", async (req, res) => {
     const result = await db.query(
       `SELECT l.phone, l.nome, l.empresa, l.stage, l.olivia_ativa,
               l.last_interaction_at, l.total_interactions,
+              l.profile, l.last_summary,
               m.content AS ultima_mensagem, m.role AS ultima_role
        FROM leads l
        LEFT JOIN LATERAL (
