@@ -1522,6 +1522,80 @@ app.post("/api/leads/:phone/toggle-olivia", async (req, res) => {
   }
 });
 
+app.post("/api/leads/iniciar", async (req, res) => {
+  try {
+    const { phone, nome, empresa, produto } = req.body;
+    if (!phone?.trim()) return res.status(400).json({ error: "phone obrigatorio" });
+
+    const phoneClean = phone.trim().replace(/\D/g, "");
+    if (phoneClean.length < 10) return res.status(400).json({ error: "phone invalido" });
+
+    const nomeClean    = nome?.trim()    || null;
+    const empresaClean = empresa?.trim() || null;
+    const produtoClean = produto?.trim() || null;
+
+    await db.query(
+      `INSERT INTO leads (phone, nome, empresa, olivia_ativa, stage, last_interaction_at, total_interactions)
+       VALUES ($1, $2, $3, true, 'novo', NOW(), 0)
+       ON CONFLICT (phone) DO UPDATE SET
+         nome    = COALESCE($2, leads.nome),
+         empresa = COALESCE($3, leads.empresa),
+         last_interaction_at = NOW()`,
+      [phoneClean, nomeClean, empresaClean]
+    );
+
+    if (produtoClean) {
+      await db.query(
+        `UPDATE leads SET profile = COALESCE(profile, '{}'::jsonb) || $2 WHERE phone = $1`,
+        [phoneClean, JSON.stringify({ produto_interesse: produtoClean })]
+      );
+    }
+
+    // Gera mensagem de abertura via Olivia
+    const leadCtx = { nome: nomeClean, empresa: empresaClean };
+    const msgs = mensagensComData([], leadCtx, [], null);
+    msgs.push({
+      role: "user",
+      content: `[FORMULÁRIO] Este cliente demonstrou interesse em: ${produtoClean || "comunicação visual"}. Inicie a conversa com uma mensagem de boas-vindas personalizada.`,
+    });
+
+    let mensagemAbertura = null;
+    try {
+      const response = await chamarClaude({
+        model:      "claude-sonnet-4-6",
+        max_tokens: 300,
+        system:     promptComData(),
+        messages:   msgs,
+      });
+      mensagemAbertura = response.data.content?.[0]?.text?.trim() || null;
+    } catch (err) {
+      console.error("[INICIAR] Falha ao gerar mensagem:", err.message);
+    }
+
+    if (!mensagemAbertura) {
+      const nomeTxt   = nomeClean  ? `, ${nomeClean}`   : "";
+      const prodTxt   = produtoClean ? ` em ${produtoClean}` : " em comunicação visual";
+      mensagemAbertura = `Olá${nomeTxt}! Sou a Olivia da Comunynk. Vi que você tem interesse${prodTxt}. Como posso te ajudar?`;
+    }
+
+    const mensagemLimpa = mensagemAbertura
+      .replace(/\[LEAD_CAPTURADO\].*/g, "")
+      .replace(/\[VISITA_SOLICITADA\].*/g, "")
+      .replace(/\[PRECISA_SUPORTE\].*/g, "")
+      .trim();
+
+    await sendZAPIMessage(phoneClean, mensagemLimpa);
+    await addToHistory(phoneClean, "assistant", mensagemLimpa);
+    broadcastSSE("leads_update", { phone: phoneClean });
+
+    console.log("[INICIAR] Lead criado e mensagem enviada para:", phoneClean);
+    res.json({ ok: true, phone: phoneClean, mensagem: mensagemLimpa });
+  } catch (err) {
+    console.error("[INICIAR] Erro:", err.response?.data || err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get("/api/leads", async (req, res) => {
   try {
     const result = await db.query(

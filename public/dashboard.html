@@ -44,6 +44,17 @@
     border-right: 1px solid #e5e7eb;
     display: flex; flex-direction: column; flex-shrink: 0;
   }
+  .sidebar-header {
+    padding: 8px 14px; display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid #e5e7eb; flex-shrink: 0;
+  }
+  .sidebar-title { font-size: 13px; font-weight: 700; color: #374151; }
+  .novo-lead-btn {
+    padding: 5px 12px; background: #6366f1; color: #fff;
+    border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer;
+  }
+  .novo-lead-btn:hover { background: #4f46e5; }
+
   .search-wrap { padding: 12px 14px; border-bottom: 1px solid #e5e7eb; }
   .search-wrap input {
     width: 100%; padding: 8px 12px; border: 1px solid #d1d5db;
@@ -266,6 +277,10 @@
 
 <div class="layout">
   <aside class="sidebar">
+    <div class="sidebar-header">
+      <span class="sidebar-title">Leads</span>
+      <button class="novo-lead-btn" onclick="openNovoLead()">+ Novo Lead</button>
+    </div>
     <div class="search-wrap">
       <input type="text" id="search" placeholder="Buscar por nome ou telefone...">
     </div>
@@ -337,6 +352,44 @@
   </div>
 </div>
 
+
+<!-- Modal Novo Lead -->
+<div class="modal-backdrop" id="novo-lead-modal">
+  <div class="modal-box">
+    <h3>Novo Lead</h3>
+    <p>Preencha os dados. A Olivia envia a mensagem de abertura automaticamente.</p>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-top:4px">
+      <div>
+        <label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:4px">Telefone *</label>
+        <input type="tel" id="nl-phone" placeholder="5511999998888"
+          style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;outline:none;font-family:inherit"
+          onkeydown="if(event.key==='Enter')document.getElementById('nl-nome').focus()">
+      </div>
+      <div>
+        <label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:4px">Nome</label>
+        <input type="text" id="nl-nome" placeholder="Nome do cliente"
+          style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;outline:none;font-family:inherit"
+          onkeydown="if(event.key==='Enter')document.getElementById('nl-empresa').focus()">
+      </div>
+      <div>
+        <label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:4px">Empresa</label>
+        <input type="text" id="nl-empresa" placeholder="Empresa (opcional)"
+          style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;outline:none;font-family:inherit"
+          onkeydown="if(event.key==='Enter')document.getElementById('nl-produto').focus()">
+      </div>
+      <div>
+        <label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:4px">Produto / Interesse</label>
+        <input type="text" id="nl-produto" placeholder="Ex: adesivo, banner, fachada..."
+          style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;outline:none;font-family:inherit"
+          onkeydown="if(event.key==='Enter')submitNovoLead()">
+      </div>
+    </div>
+    <div class="modal-actions" style="margin-top:4px">
+      <button class="btn-cancel" onclick="closeNovoLead()">Cancelar</button>
+      <button class="btn-primary" id="nl-submit-btn" onclick="submitNovoLead()">Criar e enviar</button>
+    </div>
+  </div>
+</div>
 
 <div id="toast"></div>
 
@@ -464,6 +517,51 @@
       document.getElementById("img-send-ok").disabled = false;
     };
     reader.readAsDataURL(file);
+  }
+
+  // ─── NOVO LEAD ──────────────────────────────────────────────────────
+  function openNovoLead() {
+    ["nl-phone","nl-nome","nl-empresa","nl-produto"].forEach(id => document.getElementById(id).value = "");
+    const btn = document.getElementById("nl-submit-btn");
+    btn.disabled = false;
+    btn.textContent = "Criar e enviar";
+    document.getElementById("novo-lead-modal").classList.add("open");
+    setTimeout(() => document.getElementById("nl-phone").focus(), 80);
+  }
+
+  function closeNovoLead() {
+    document.getElementById("novo-lead-modal").classList.remove("open");
+  }
+
+  async function submitNovoLead() {
+    const phone   = document.getElementById("nl-phone").value.trim().replace(/\D/g, "");
+    const nome    = document.getElementById("nl-nome").value.trim();
+    const empresa = document.getElementById("nl-empresa").value.trim();
+    const produto = document.getElementById("nl-produto").value.trim();
+
+    if (!phone || phone.length < 10) { toast("Informe um telefone válido (com DDD)"); return; }
+
+    const btn = document.getElementById("nl-submit-btn");
+    btn.disabled = true;
+    btn.textContent = "Enviando...";
+
+    try {
+      const r = await fetch("/api/leads/iniciar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone, nome, empresa, produto }),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      closeNovoLead();
+      toast("Lead criado. Olivia enviou a mensagem de abertura.");
+      await fetchLeads();
+      selectLead(phone);
+    } catch (e) {
+      toast("Erro ao criar lead");
+      console.error(e);
+      btn.disabled = false;
+      btn.textContent = "Criar e enviar";
+    }
   }
 
   // ─── LEADS ─────────────────────────────────────────────────────────
