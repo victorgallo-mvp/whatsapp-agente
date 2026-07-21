@@ -782,6 +782,28 @@ async function processarMensagensPendentes(userId) {
 }
 
 // ─── WEBHOOK EVOLUTION API ───────────────────────────────────────────────────
+const AUTO_REPLY_PATTERNS = [
+  "agradecemos sua mensagem",
+  "não estamos disponíveis",
+  "nao estamos disponiveis",
+  "entraremos em contato assim que",
+  "fora do horário de atendimento",
+  "fora do horario de atendimento",
+  "horário de atendimento",
+  "horario de atendimento",
+  "resposta automática",
+  "resposta automatica",
+  "mensagem automática",
+  "mensagem automatica",
+  "atendimento automático",
+  "atendimento automatico",
+];
+
+function ehRespostaAutomatica(texto) {
+  const lower = (texto || "").toLowerCase();
+  return AUTO_REPLY_PATTERNS.some(p => lower.includes(p));
+}
+
 function parseWebhookBody(raw) {
   if (!raw.data?.key) return raw;
   const data = raw.data;
@@ -795,20 +817,32 @@ function parseWebhookBody(raw) {
                 || msg.documentWithCaptionMessage?.message?.documentMessage;
   const audioMsg = msg.audioMessage;
 
+  // Extração de texto — cobre mensagens diretas, encaminhadas e templates
+  const textoRaw = msg.conversation
+    || msg.extendedTextMessage?.text
+    || msg.ephemeralMessage?.message?.conversation
+    || msg.ephemeralMessage?.message?.extendedTextMessage?.text
+    || msg.viewOnceMessage?.message?.extendedTextMessage?.text
+    || null;
+
+  if (!textoRaw && !imageMsg && !docMsg && !audioMsg && !msg.videoMessage && !msg.stickerMessage) {
+    const tipos = Object.keys(msg).join(",");
+    if (tipos) console.log("[WEBHOOK] Tipo de mensagem nao mapeado:", tipos);
+  }
+
   return {
     phone,
-    fromMe:   key.fromMe  || false,
-    isGroup:  jid.endsWith("@g.us"),
-    text:     (msg.conversation || msg.extendedTextMessage?.text)
-                ? { message: msg.conversation || msg.extendedTextMessage?.text }
-                : null,
-    image:    imageMsg ? { imageUrl: imageMsg.url, caption: imageMsg.caption || "" } : null,
-    document: docMsg   ? { documentUrl: docMsg.url, fileName: docMsg.fileName || "documento.pdf", caption: docMsg.caption || "" } : null,
-    audio:    audioMsg ? { audioUrl: audioMsg.url, ptt: audioMsg.ptt || false } : null,
-    video:    msg.videoMessage    || null,
-    sticker:  msg.stickerMessage  || null,
-    contact:  msg.contactMessage  || null,
-    location: msg.locationMessage || null,
+    fromMe:      key.fromMe  || false,
+    isGroup:     jid.endsWith("@g.us"),
+    isForwarded: !!(data.contextInfo?.isForwarded || msg.extendedTextMessage?.contextInfo?.isForwarded),
+    text:        textoRaw ? { message: textoRaw } : null,
+    image:       imageMsg ? { imageUrl: imageMsg.url, caption: imageMsg.caption || "" } : null,
+    document:    docMsg   ? { documentUrl: docMsg.url, fileName: docMsg.fileName || "documento.pdf", caption: docMsg.caption || "" } : null,
+    audio:       audioMsg ? { audioUrl: audioMsg.url, ptt: audioMsg.ptt || false } : null,
+    video:       msg.videoMessage    || null,
+    sticker:     msg.stickerMessage  || null,
+    contact:     msg.contactMessage  || null,
+    location:    msg.locationMessage || null,
   };
 }
 
@@ -902,6 +936,15 @@ app.post("/webhook", async (req, res) => {
       console.log("[WEBHOOK] Mensagem sem texto processável — descartada. phone:", userId);
       return;
     }
+
+    // Detecta resposta automática de ausência (WhatsApp Business bot do cliente)
+    if (ehRespostaAutomatica(body.text.message)) {
+      console.log("[WEBHOOK] Resposta automática detectada de:", userId);
+      upsertLead(userId, {}).catch(err => console.error("[WEBHOOK] upsertLead auto_reply erro:", err.message));
+      await addToHistory(userId, "system", "[AUTO_RESPOSTA] O cliente tem resposta automática ativa. Número possivelmente indisponível no momento.");
+      return;
+    }
+
     console.log("[" + userId + "] " + body.text.message);
     // Garante que o lead existe no banco imediatamente (antes de Olivia processar)
     upsertLead(userId, {}).catch(err => console.error("[WEBHOOK] upsertLead erro:", err.message));

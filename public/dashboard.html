@@ -137,11 +137,12 @@
     font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 5px;
     display: inline-flex; align-items: center; gap: 3px; white-space: nowrap;
   }
-  .action-tag.urgente  { background: var(--red-lt);   color: var(--red); }
-  .action-tag.proposta { background: var(--surface);  color: var(--dark2); }
-  .action-tag.fechar   { background: var(--cyan-lt);  color: var(--cyan-dk); }
-  .action-tag.visita   { background: var(--surface);  color: var(--dark2); }
-  .action-tag.ativo    { background: var(--surface);  color: var(--muted2); }
+  .action-tag.urgente     { background: var(--red-lt);  color: var(--red); }
+  .action-tag.auto-reply  { background: #FFF7ED;        color: #C2410C; }
+  .action-tag.proposta    { background: var(--surface); color: var(--dark2); }
+  .action-tag.fechar      { background: var(--cyan-lt); color: var(--cyan-dk); }
+  .action-tag.visita      { background: var(--surface); color: var(--dark2); }
+  .action-tag.ativo       { background: var(--surface); color: var(--muted2); }
 
   /* ─── MAIN ───────────────────────────────────────── */
   .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
@@ -626,10 +627,12 @@
   }
 
   function classifyLead(lead) {
-    if (lead.olivia_ativa === false) return { key: "urgente",  icon: "⚠️", label: "Atendimento urgente", pendente: true };
-    if (lead.stage === "fechando")   return { key: "fechar",   icon: "✅", label: "Fechar negócio",      pendente: true };
-    if (lead.stage === "qualificado")return { key: "proposta", icon: "📋", label: "Enviar proposta",     pendente: true };
-    if (lead.stage === "qualificando")return { key: "visita",  icon: "📅", label: "Visita agendada",     pendente: true };
+    if ((lead.ultima_mensagem || "").includes("[AUTO_RESPOSTA]") && lead.ultima_role === "system")
+      return { key: "auto-reply", icon: "📵", label: "Número indisponível", pendente: true };
+    if (lead.olivia_ativa === false)  return { key: "urgente",  icon: "⚠️", label: "Atendimento urgente", pendente: true };
+    if (lead.stage === "fechando")    return { key: "fechar",   icon: "✅", label: "Fechar negócio",      pendente: true };
+    if (lead.stage === "qualificado") return { key: "proposta", icon: "📋", label: "Enviar proposta",     pendente: true };
+    if (lead.stage === "qualificando")return { key: "visita",   icon: "📅", label: "Visita agendada",     pendente: true };
     return { key: "ativo", icon: "💬", label: "Em atendimento", pendente: false };
   }
 
