@@ -772,7 +772,7 @@ async function processarMensagensPendentes(userId) {
     }
 
     // Atualiza contagem de interações e verifica se perfil precisa de update
-    upsertLead(userId, {}).catch(() => {});
+    upsertLead(userId, {}).catch(err => console.error("[PROCESSAMENTO] upsertLead erro:", err.message));
     verificarAtualizacaoPerfil(userId);
   } catch (err) {
     console.error("Erro ao processar mensagens:", err.response?.data || err.message);
@@ -815,8 +815,13 @@ function parseWebhookBody(raw) {
 app.post("/webhook", async (req, res) => {
   res.sendStatus(200);
   try {
+    // Log completo do payload para diagnóstico
+    const evento = req.body.event || req.body.type || "(sem event)";
+    console.log("[WEBHOOK] evento:", evento, "| keys:", Object.keys(req.body).join(","));
+
     if (req.body.event && req.body.event !== "messages.upsert") return;
     const body = parseWebhookBody(req.body);
+    console.log("[WEBHOOK] phone:", body.phone, "| fromMe:", body.fromMe, "| isGroup:", body.isGroup, "| temTexto:", !!body.text?.message, "| temImagem:", !!body.image);
 
     if (body.isGroup) return;
 
@@ -887,13 +892,19 @@ app.post("/webhook", async (req, res) => {
         }
       }
 
+      upsertLead(userId, {}).catch(err => console.error("[WEBHOOK] upsertLead imagem erro:", err.message));
       enfileirarMensagem(userId, { content: "[o cliente enviou uma imagem" + caption + descricao + "]" });
       return;
     }
 
     // Texto: enfileira
-    if (!body.text?.message) return;
+    if (!body.text?.message) {
+      console.log("[WEBHOOK] Mensagem sem texto processável — descartada. phone:", userId);
+      return;
+    }
     console.log("[" + userId + "] " + body.text.message);
+    // Garante que o lead existe no banco imediatamente (antes de Olivia processar)
+    upsertLead(userId, {}).catch(err => console.error("[WEBHOOK] upsertLead erro:", err.message));
     enfileirarMensagem(userId, { content: body.text.message });
 
   } catch (err) {
