@@ -618,9 +618,23 @@ async function processarMensagemResponsavel(body) {
 
   try {
     if (body.image?.imageUrl) {
-      await wppSendImage(clientePhone, body.image.imageUrl, intro + (conteudo ? "\n" + conteudo : ""));
+      const imgRes   = await axios.get(body.image.imageUrl, { responseType: "arraybuffer", timeout: 15000 });
+      const base64   = Buffer.from(imgRes.data).toString("base64");
+      const mimetype = (imgRes.headers["content-type"] || "image/jpeg").split(";")[0].trim();
+      await axios.post(
+        `${EVOLUTION_URL}/message/sendMedia/${EVOLUTION_INSTANCE}`,
+        { number: sanitizePhone(clientePhone), mediatype: "image", media: base64, mimetype, caption: intro + (conteudo ? "\n" + conteudo : "") },
+        { headers: EVOLUTION_HEADERS() }
+      );
     } else if (body.document?.documentUrl) {
-      await wppSendDocument(clientePhone, body.document.documentUrl, body.document.fileName || "documento.pdf", intro);
+      const docRes   = await axios.get(body.document.documentUrl, { responseType: "arraybuffer", timeout: 30000 });
+      const base64   = Buffer.from(docRes.data).toString("base64");
+      const mimetype = (docRes.headers["content-type"] || "application/pdf").split(";")[0].trim();
+      await axios.post(
+        `${EVOLUTION_URL}/message/sendMedia/${EVOLUTION_INSTANCE}`,
+        { number: sanitizePhone(clientePhone), mediatype: "document", media: base64, mimetype, fileName: body.document.fileName || "documento.pdf", caption: intro },
+        { headers: EVOLUTION_HEADERS() }
+      );
     } else if (conteudo) {
       await sendZAPIMessage(clientePhone, intro + "\n\n" + conteudo);
     } else {
@@ -1210,12 +1224,20 @@ async function verificarGatilhos(reply, userId) {
     const arteUrl = artes[userId] || await db.query(`SELECT arte_url FROM leads WHERE phone = $1`, [userId]).then(r => r.rows[0]?.arte_url);
     if (arteUrl && NOTIFICACOES.whatsapp_responsavel !== "PREENCHA_AQUI") {
       try {
-        await wppSendImage(NOTIFICACOES.whatsapp_responsavel, arteUrl, `Arte de ${nome} — alteração solicitada: ${alteracao}`);
+        const imgRes   = await axios.get(arteUrl, { responseType: "arraybuffer", timeout: 15000 });
+        const base64   = Buffer.from(imgRes.data).toString("base64");
+        const mimetype = (imgRes.headers["content-type"] || "image/jpeg").split(";")[0].trim();
+        await axios.post(
+          `${EVOLUTION_URL}/message/sendMedia/${EVOLUTION_INSTANCE}`,
+          { number: sanitizePhone(NOTIFICACOES.whatsapp_responsavel), mediatype: "image", media: base64, mimetype, caption: `Arte de ${nome} — alteração solicitada: ${alteracao}` },
+          { headers: EVOLUTION_HEADERS() }
+        );
         console.log("[ARTE_REVISAO] Arte encaminhada ao responsavel com descricao de alteracao.");
       } catch (err) {
         console.error("[ARTE_REVISAO] Erro ao encaminhar arte:", err.response?.data || err.message);
       }
     }
+    await addToHistory(userId, "assistant", `[ARTE_REVISAO] Pedido de alteração encaminhado ao responsavel — alteração: ${alteracao}`);
   }
 
   if (reply.includes("[VISITA_REAGENDADA]")) {
