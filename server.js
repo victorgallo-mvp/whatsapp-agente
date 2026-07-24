@@ -617,45 +617,18 @@ async function processarMensagemResponsavel(body) {
   const conteudo = matchPrefixo ? matchPrefixo[2].trim() : texto.trim();
 
   try {
-    if (body.image?.imageUrl) {
-      // Usa getBase64FromMediaMessage para descriptografar a imagem recebida (URL do CDN é criptografada)
-      let base64 = null;
-      let mimetype = "image/jpeg";
-      if (body.rawMsg) {
-        try {
-          const r = await axios.post(
-            `${EVOLUTION_URL}/chat/getBase64FromMediaMessage/${EVOLUTION_INSTANCE}`,
-            { message: body.rawMsg, convertToMp4: false },
-            { headers: EVOLUTION_HEADERS() }
-          );
-          base64   = r.data.base64;
-          mimetype = r.data.mimetype || "image/jpeg";
-          console.log("[RELAY] base64 obtido via getBase64FromMediaMessage, mimetype:", mimetype);
-        } catch (e) {
-          console.error("[RELAY] getBase64FromMediaMessage falhou, tentando download direto:", e.response?.data || e.message);
-        }
+    if ((body.image?.imageUrl || body.document?.documentUrl) && body.rawMsg) {
+      // Envia aviso de texto antes do encaminhamento
+      if (intro || conteudo) {
+        await sendZAPIMessage(clientePhone, intro + (conteudo ? "\n" + conteudo : ""));
       }
-      if (!base64) {
-        // Fallback: download direto da URL
-        const imgRes = await axios.get(body.image.imageUrl, { responseType: "arraybuffer", timeout: 15000 });
-        base64   = Buffer.from(imgRes.data).toString("base64");
-        mimetype = (imgRes.headers["content-type"] || "image/jpeg").split(";")[0].trim();
-        console.log("[RELAY] base64 obtido via download direto, mimetype:", mimetype);
-      }
+      // Encaminha a mensagem original via forwardMessage (sem baixar/reencoder)
       await axios.post(
-        `${EVOLUTION_URL}/message/sendMedia/${EVOLUTION_INSTANCE}`,
-        { number: sanitizePhone(clientePhone), mediatype: "image", media: base64, mimetype, caption: intro + (conteudo ? "\n" + conteudo : "") },
+        `${EVOLUTION_URL}/message/forwardMessage/${EVOLUTION_INSTANCE}`,
+        { number: sanitizePhone(clientePhone), key: body.rawMsg.key },
         { headers: EVOLUTION_HEADERS() }
       );
-    } else if (body.document?.documentUrl) {
-      const docRes = await axios.get(body.document.documentUrl, { responseType: "arraybuffer", timeout: 30000 });
-      const base64 = Buffer.from(docRes.data).toString("base64");
-      const mimetype = (docRes.headers["content-type"] || "application/pdf").split(";")[0].trim();
-      await axios.post(
-        `${EVOLUTION_URL}/message/sendMedia/${EVOLUTION_INSTANCE}`,
-        { number: sanitizePhone(clientePhone), mediatype: "document", media: base64, mimetype, fileName: body.document.fileName || "documento.pdf", caption: intro },
-        { headers: EVOLUTION_HEADERS() }
-      );
+      console.log("[RELAY] Mensagem encaminhada via forwardMessage para:", clientePhone);
     } else if (conteudo) {
       await sendZAPIMessage(clientePhone, intro + "\n\n" + conteudo);
     } else {
