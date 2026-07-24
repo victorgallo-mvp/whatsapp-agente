@@ -618,23 +618,9 @@ async function processarMensagemResponsavel(body) {
 
   try {
     if (body.image?.imageUrl) {
-      const imgRes   = await axios.get(body.image.imageUrl, { responseType: "arraybuffer", timeout: 15000 });
-      const base64   = Buffer.from(imgRes.data).toString("base64");
-      const mimetype = (imgRes.headers["content-type"] || "image/jpeg").split(";")[0].trim();
-      await axios.post(
-        `${EVOLUTION_URL}/message/sendMedia/${EVOLUTION_INSTANCE}`,
-        { number: sanitizePhone(clientePhone), mediatype: "image", media: base64, mimetype, caption: intro + (conteudo ? "\n" + conteudo : "") },
-        { headers: EVOLUTION_HEADERS() }
-      );
+      await wppSendImage(clientePhone, body.image.imageUrl, intro + (conteudo ? "\n" + conteudo : ""));
     } else if (body.document?.documentUrl) {
-      const docRes   = await axios.get(body.document.documentUrl, { responseType: "arraybuffer", timeout: 30000 });
-      const base64   = Buffer.from(docRes.data).toString("base64");
-      const mimetype = (docRes.headers["content-type"] || "application/pdf").split(";")[0].trim();
-      await axios.post(
-        `${EVOLUTION_URL}/message/sendMedia/${EVOLUTION_INSTANCE}`,
-        { number: sanitizePhone(clientePhone), mediatype: "document", media: base64, mimetype, fileName: body.document.fileName || "documento.pdf", caption: intro },
-        { headers: EVOLUTION_HEADERS() }
-      );
+      await wppSendDocument(clientePhone, body.document.documentUrl, body.document.fileName || "documento.pdf", intro);
     } else if (conteudo) {
       await sendZAPIMessage(clientePhone, intro + "\n\n" + conteudo);
     } else {
