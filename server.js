@@ -874,6 +874,7 @@ app.post("/webhook", async (req, res) => {
           sem9(foneBody) === sem9(foneResponsavel)
         );
         if (!isToResponsavel) {
+          upsertLead(body.phone, {}).catch(err => console.error("[WEBHOOK] upsertLead fromMe erro:", err.message));
           await addToHistory(body.phone, "assistant", "[DIRETO] " + body.text.message);
           broadcastSSE("leads_update", { phone: body.phone });
         }
@@ -1854,12 +1855,16 @@ cron.schedule("0 8 * * *", async () => {
         `Abrir conversa: https://wa.me/${foneWA}\n\n` +
         `Mensagem sugerida:\n"${msgSugerida}"`;
 
-      await sendZAPIMessage(visita.user_id, `Olá ${nome}, tudo bem? Passando para confirmar a visita técnica agendada para hoje às ${horario}. Estaremos no local. Qualquer dúvida é só chamar.`);
+      const msgLembrete = `Olá ${nome}, tudo bem? Passando para confirmar a visita técnica agendada para hoje às ${horario}. Estaremos no local. Qualquer dúvida é só chamar.`;
+      await sendZAPIMessage(visita.user_id, msgLembrete);
+      await addToHistory(visita.user_id, "assistant", "[LEMBRETE_VISITA] " + msgLembrete);
       console.log("[LEMBRETE] Confirmacao enviada ao cliente:", visita.user_id);
 
       await notificarResponsavel("Lembrete de visita técnica hoje - " + nome, corpo);
 
       await db.query(`UPDATE visitas SET lembrete_enviado = TRUE WHERE id = $1`, [visita.id]);
+      upsertLead(visita.user_id, {}).catch(err => console.error("[LEMBRETE] upsertLead erro:", err.message));
+      broadcastSSE("leads_update", { phone: visita.user_id });
       console.log("[LEMBRETE] Visita enviada para:", nome);
     }
   } catch (err) {
