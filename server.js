@@ -618,9 +618,44 @@ async function processarMensagemResponsavel(body) {
 
   try {
     if (body.image?.imageUrl) {
-      await wppSendImage(clientePhone, body.image.imageUrl, intro + (conteudo ? "\n" + conteudo : ""));
+      // Usa getBase64FromMediaMessage para descriptografar a imagem recebida (URL do CDN é criptografada)
+      let base64 = null;
+      let mimetype = "image/jpeg";
+      if (body.rawMsg) {
+        try {
+          const r = await axios.post(
+            `${EVOLUTION_URL}/chat/getBase64FromMediaMessage/${EVOLUTION_INSTANCE}`,
+            { message: body.rawMsg, convertToMp4: false },
+            { headers: EVOLUTION_HEADERS() }
+          );
+          base64   = r.data.base64;
+          mimetype = r.data.mimetype || "image/jpeg";
+          console.log("[RELAY] base64 obtido via getBase64FromMediaMessage, mimetype:", mimetype);
+        } catch (e) {
+          console.error("[RELAY] getBase64FromMediaMessage falhou, tentando download direto:", e.response?.data || e.message);
+        }
+      }
+      if (!base64) {
+        // Fallback: download direto da URL
+        const imgRes = await axios.get(body.image.imageUrl, { responseType: "arraybuffer", timeout: 15000 });
+        base64   = Buffer.from(imgRes.data).toString("base64");
+        mimetype = (imgRes.headers["content-type"] || "image/jpeg").split(";")[0].trim();
+        console.log("[RELAY] base64 obtido via download direto, mimetype:", mimetype);
+      }
+      await axios.post(
+        `${EVOLUTION_URL}/message/sendMedia/${EVOLUTION_INSTANCE}`,
+        { number: sanitizePhone(clientePhone), mediatype: "image", media: base64, mimetype, caption: intro + (conteudo ? "\n" + conteudo : "") },
+        { headers: EVOLUTION_HEADERS() }
+      );
     } else if (body.document?.documentUrl) {
-      await wppSendDocument(clientePhone, body.document.documentUrl, body.document.fileName || "documento.pdf", intro);
+      const docRes = await axios.get(body.document.documentUrl, { responseType: "arraybuffer", timeout: 30000 });
+      const base64 = Buffer.from(docRes.data).toString("base64");
+      const mimetype = (docRes.headers["content-type"] || "application/pdf").split(";")[0].trim();
+      await axios.post(
+        `${EVOLUTION_URL}/message/sendMedia/${EVOLUTION_INSTANCE}`,
+        { number: sanitizePhone(clientePhone), mediatype: "document", media: base64, mimetype, fileName: body.document.fileName || "documento.pdf", caption: intro },
+        { headers: EVOLUTION_HEADERS() }
+      );
     } else if (conteudo) {
       await sendZAPIMessage(clientePhone, intro + "\n\n" + conteudo);
     } else {
@@ -852,6 +887,7 @@ function parseWebhookBody(raw) {
     sticker:     msg.stickerMessage  || null,
     contact:     msg.contactMessage  || null,
     location:    msg.locationMessage || null,
+    rawMsg:      { key, message: msg },
   };
 }
 
