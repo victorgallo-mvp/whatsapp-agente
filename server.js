@@ -340,6 +340,7 @@ async function initDb() {
   `);
   await db.query(`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS endereco TEXT`);
   await db.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS arte_url TEXT`);
+  await db.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS arte_raw_msg JSONB`);
   await db.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS olivia_ativa BOOLEAN DEFAULT TRUE`);
 
   await db.query(`
@@ -446,24 +447,30 @@ async function addToHistory(userId, role, content) {
   broadcastSSE("message", { phone: userId, role, content, created_at: res.rows[0]?.created_at });
 }
 
-async function salvarArteUrl(phone, url) {
+async function salvarArteRaw(phone, rawMsg) {
   await db.query(
-    `INSERT INTO leads (phone, arte_url) VALUES ($1, $2)
-     ON CONFLICT (phone) DO UPDATE SET arte_url = $2`,
-    [phone, url]
+    `INSERT INTO leads (phone, arte_raw_msg) VALUES ($1, $2)
+     ON CONFLICT (phone) DO UPDATE SET arte_raw_msg = $2`,
+    [phone, JSON.stringify(rawMsg)]
   );
 }
 
-async function encaminharArteParaOperador(phone, imageUrl, caption) {
+async function obterBase64Midia(rawMsg) {
+  const r = await axios.post(
+    `${EVOLUTION_URL}/chat/getBase64FromMediaMessage/${EVOLUTION_INSTANCE}`,
+    { message: rawMsg, convertToMp4: false },
+    { headers: EVOLUTION_HEADERS() }
+  );
+  return { base64: r.data.base64, mimetype: r.data.mimetype || "image/jpeg" };
+}
+
+async function encaminharArteParaOperador(phone, rawMsg, caption) {
   if (NOTIFICACOES.whatsapp_responsavel === "PREENCHA_AQUI") return;
   try {
     const lead = await getLead(phone);
     const nome = lead?.nome || phone;
     const captionText = `Arte/referência de ${nome} (${phone})` + (caption ? `\n"${caption}"` : "");
-    // Baixa a imagem localmente antes de reenviar — URLs do WhatsApp são temporárias
-    const imgRes  = await axios.get(imageUrl, { responseType: "arraybuffer", timeout: 15000 });
-    const base64  = Buffer.from(imgRes.data).toString("base64");
-    const mimetype = (imgRes.headers["content-type"] || "image/jpeg").split(";")[0].trim();
+    const { base64, mimetype } = await obterBase64Midia(rawMsg);
     await axios.post(
       `${EVOLUTION_URL}/message/sendMedia/${EVOLUTION_INSTANCE}`,
       { number: sanitizePhone(NOTIFICACOES.whatsapp_responsavel), mediatype: "image", media: base64, mimetype, caption: captionText },
@@ -618,17 +625,17 @@ async function processarMensagemResponsavel(body) {
 
   try {
     if ((body.image?.imageUrl || body.document?.documentUrl) && body.rawMsg) {
-      // Envia aviso de texto antes do encaminhamento
-      if (intro || conteudo) {
-        await sendZAPIMessage(clientePhone, intro + (conteudo ? "\n" + conteudo : ""));
-      }
-      // Encaminha a mensagem original via forwardMessage (sem baixar/reencoder)
+      const { base64, mimetype } = await obterBase64Midia(body.rawMsg);
+      const mediaType   = body.image ? "image" : "document";
+      const captionText = intro + (conteudo ? "\n" + conteudo : "");
+      const payload     = { number: sanitizePhone(clientePhone), mediatype: mediaType, media: base64, mimetype, caption: captionText };
+      if (body.document) payload.fileName = body.document.fileName || "documento.pdf";
       await axios.post(
-        `${EVOLUTION_URL}/message/forwardMessage/${EVOLUTION_INSTANCE}`,
-        { number: sanitizePhone(clientePhone), key: body.rawMsg.key },
+        `${EVOLUTION_URL}/message/sendMedia/${EVOLUTION_INSTANCE}`,
+        payload,
         { headers: EVOLUTION_HEADERS() }
       );
-      console.log("[RELAY] Mensagem encaminhada via forwardMessage para:", clientePhone);
+      console.log("[RELAY] Midia encaminhada via getBase64FromMediaMessage para:", clientePhone);
     } else if (conteudo) {
       await sendZAPIMessage(clientePhone, intro + "\n\n" + conteudo);
     } else {
@@ -929,10 +936,10 @@ app.post("/webhook", async (req, res) => {
     // Imagem: analisa com Claude Vision e enfileira com descrição
     if (body.image) {
       const caption = body.image.caption ? " — legenda: " + body.image.caption : "";
-      if (body.image.imageUrl) {
-        artes[userId] = body.image.imageUrl;
-        salvarArteUrl(userId, body.image.imageUrl).catch(() => {});
-        encaminharArteParaOperador(userId, body.image.imageUrl, body.image.caption || "").catch(() => {});
+      if (body.rawMsg) {
+        artes[userId] = body.rawMsg;
+        salvarArteRaw(userId, body.rawMsg).catch(() => {});
+        encaminharArteParaOperador(userId, body.rawMsg, body.image.caption || "").catch(() => {});
       }
 
       let descricao = "";
@@ -1114,13 +1121,18 @@ async function verificarGatilhos(reply, userId) {
     await upsertLead(userId, { nome, empresa, stage: "qualificado" });
     await notificarResponsavel(assunto, corpo);
 
-    const arteUrl = artes[userId] || await db.query(`SELECT arte_url FROM leads WHERE phone = $1`, [userId]).then(r => r.rows[0]?.arte_url);
-    if (arteUrl && NOTIFICACOES.whatsapp_responsavel !== "PREENCHA_AQUI") {
+    const arteRaw = artes[userId] || await db.query(`SELECT arte_raw_msg FROM leads WHERE phone = $1`, [userId]).then(r => r.rows[0]?.arte_raw_msg ? JSON.parse(r.rows[0].arte_raw_msg) : null);
+    if (arteRaw && NOTIFICACOES.whatsapp_responsavel !== "PREENCHA_AQUI") {
       try {
         const captionObs = observacao && observacao.toLowerCase() !== "nenhuma"
           ? "\n\nObservação do cliente: " + observacao
           : "";
-        await wppSendImage(NOTIFICACOES.whatsapp_responsavel, arteUrl, "Arte de referência do cliente: " + nome + captionObs);
+        const { base64, mimetype } = await obterBase64Midia(arteRaw);
+        await axios.post(
+          `${EVOLUTION_URL}/message/sendMedia/${EVOLUTION_INSTANCE}`,
+          { number: sanitizePhone(NOTIFICACOES.whatsapp_responsavel), mediatype: "image", media: base64, mimetype, caption: "Arte de referência do cliente: " + nome + captionObs },
+          { headers: EVOLUTION_HEADERS() }
+        );
         console.log("Arte encaminhada para o responsavel.");
       } catch (err) {
         console.error("Erro ao encaminhar arte:", err.response?.data || err.message);
@@ -1216,12 +1228,10 @@ async function verificarGatilhos(reply, userId) {
       "Cliente pede alteração na arte - Comunynk",
       `${nome} quer alterações na arte.\n\nPedido: ${alteracao}\nTelefone: ${telefone}\nAbrir conversa: https://wa.me/${foneWA}`
     );
-    const arteUrl = artes[userId] || await db.query(`SELECT arte_url FROM leads WHERE phone = $1`, [userId]).then(r => r.rows[0]?.arte_url);
-    if (arteUrl && NOTIFICACOES.whatsapp_responsavel !== "PREENCHA_AQUI") {
+    const arteRaw = artes[userId] || await db.query(`SELECT arte_raw_msg FROM leads WHERE phone = $1`, [userId]).then(r => r.rows[0]?.arte_raw_msg ? JSON.parse(r.rows[0].arte_raw_msg) : null);
+    if (arteRaw && NOTIFICACOES.whatsapp_responsavel !== "PREENCHA_AQUI") {
       try {
-        const imgRes   = await axios.get(arteUrl, { responseType: "arraybuffer", timeout: 15000 });
-        const base64   = Buffer.from(imgRes.data).toString("base64");
-        const mimetype = (imgRes.headers["content-type"] || "image/jpeg").split(";")[0].trim();
+        const { base64, mimetype } = await obterBase64Midia(arteRaw);
         await axios.post(
           `${EVOLUTION_URL}/message/sendMedia/${EVOLUTION_INSTANCE}`,
           { number: sanitizePhone(NOTIFICACOES.whatsapp_responsavel), mediatype: "image", media: base64, mimetype, caption: `Arte de ${nome} — alteração solicitada: ${alteracao}` },
