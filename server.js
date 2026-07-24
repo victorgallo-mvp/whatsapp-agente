@@ -460,7 +460,15 @@ async function encaminharArteParaOperador(phone, imageUrl, caption) {
     const lead = await getLead(phone);
     const nome = lead?.nome || phone;
     const captionText = `Arte/referência de ${nome} (${phone})` + (caption ? `\n"${caption}"` : "");
-    await wppSendImage(NOTIFICACOES.whatsapp_responsavel, imageUrl, captionText);
+    // Baixa a imagem localmente antes de reenviar — URLs do WhatsApp são temporárias
+    const imgRes  = await axios.get(imageUrl, { responseType: "arraybuffer", timeout: 15000 });
+    const base64  = Buffer.from(imgRes.data).toString("base64");
+    const mimetype = (imgRes.headers["content-type"] || "image/jpeg").split(";")[0].trim();
+    await axios.post(
+      `${EVOLUTION_URL}/message/sendMedia/${EVOLUTION_INSTANCE}`,
+      { number: sanitizePhone(NOTIFICACOES.whatsapp_responsavel), mediatype: "image", media: base64, mimetype, caption: captionText },
+      { headers: EVOLUTION_HEADERS() }
+    );
     console.log("[ARTE] Encaminhada para operador de:", phone);
   } catch (err) {
     console.error("[ARTE] Erro ao encaminhar arte para operador:", err.response?.data || err.message);
