@@ -25,6 +25,7 @@ const GOOGLE_REDIRECT_URI     = process.env.GOOGLE_REDIRECT_URI     || "";
 const GOOGLE_REFRESH_TOKEN    = process.env.GOOGLE_REFRESH_TOKEN    || "";
 
 const VOYAGE_API_KEY = process.env.VOYAGE_API_KEY || "";
+const GROQ_API_KEY   = process.env.GROQ_API_KEY   || "";
 
 const NOTIFICACOES = {
   whatsapp_responsavel: process.env.WHATSAPP_RESPONSAVEL || "PREENCHA_AQUI",
@@ -46,9 +47,9 @@ Não elogie a escolha do cliente ("ótima escolha", "perfeito!", "que legal", "c
 Faça uma pergunta por vez para informações técnicas do produto.
 Para coleta de dados de contato, agrupe todas as perguntas em uma única mensagem numerada.
 
-ÁUDIOS:
+SITUAÇÕES QUE NÃO COMPREENDE:
 
-Você não consegue ouvir áudios. Se o cliente enviar um áudio, diga: "Não consigo ouvir áudios por aqui. Pode me escrever o que precisa?"
+Quando não entender a mensagem, o contexto ou a situação, seja honesta e direta: diga que vai conectar o cliente com um consultor que poderá ajudar melhor. Nunca invente desculpas técnicas. Nunca diga que não consegue ouvir áudio ou processar algo — se você não entende o que o cliente quer, assuma isso claramente.
 
 IMAGENS:
 
@@ -453,6 +454,28 @@ async function salvarArteRaw(phone, rawMsg) {
      ON CONFLICT (phone) DO UPDATE SET arte_raw_msg = $2`,
     [phone, JSON.stringify(rawMsg)]
   );
+}
+
+async function transcreverAudio(rawMsg) {
+  const { base64, mimetype } = await obterBase64Midia(rawMsg);
+  const buffer = Buffer.from(base64, "base64");
+
+  const FormData = require("form-data");
+  const form = new FormData();
+  form.append("file", buffer, {
+    filename: "audio.ogg",
+    contentType: mimetype || "audio/ogg",
+  });
+  form.append("model", "whisper-large-v3");
+  form.append("language", "pt");
+  form.append("response_format", "text");
+
+  const r = await axios.post(
+    "https://api.groq.com/openai/v1/audio/transcriptions",
+    form,
+    { headers: { ...form.getHeaders(), Authorization: `Bearer ${GROQ_API_KEY}` } }
+  );
+  return typeof r.data === "string" ? r.data.trim() : (r.data?.text || "").trim();
 }
 
 async function obterBase64Midia(rawMsg) {
@@ -917,18 +940,38 @@ app.post("/webhook", async (req, res) => {
       return;
     }
 
-    // Áudio real (voz): audioUrl ou push-to-talk
-    if (body.audio?.audioUrl || body.audio?.ptt) {
-      await sendZAPIMessage(body.phone, "Não consigo ouvir áudios por aqui. Pode me escrever o que precisa?");
-      return;
+    // Áudio: tenta transcrever com Groq Whisper
+    if (body.audio && body.rawMsg) {
+      if (!GROQ_API_KEY) {
+        console.warn("[AUDIO] GROQ_API_KEY não configurada — áudio ignorado.");
+        return res.sendStatus(200);
+      }
+      try {
+        console.log("[AUDIO] Transcrevendo áudio de:", body.phone);
+        const transcricao = await transcreverAudio(body.rawMsg);
+        if (!transcricao) throw new Error("Transcrição vazia");
+        console.log("[AUDIO] Transcrito:", transcricao.substring(0, 100));
+        upsertLead(body.phone, {}).catch(() => {});
+        enfileirarMensagem(body.phone, { content: transcricao });
+      } catch (err) {
+        console.error("[AUDIO] Falha na transcrição:", err.response?.data || err.message);
+        await sendZAPIMessage(body.phone, "Recebido, nosso consultor entrará em contato em breve.");
+        if (NOTIFICACOES.whatsapp_responsavel !== "PREENCHA_AQUI") {
+          await sendZAPIMessage(
+            NOTIFICACOES.whatsapp_responsavel,
+            `[ÁUDIO NÃO TRANSCRITO] ${body.phone} enviou um áudio que não foi possível transcrever. Necessita atenção manual.`
+          ).catch(() => {});
+        }
+      }
+      return res.sendStatus(200);
     }
 
-    // Outras mídias não suportadas (vídeo, sticker, contato, localização, áudio sem URL)
+    // Outras mídias não suportadas (vídeo, sticker, contato, localização)
     if (body.video || body.sticker || body.contact || body.location || body.audio) {
       const tipo = body.video ? "video" : body.sticker ? "sticker" : body.contact ? "contact" : body.location ? "location" : "audio";
       console.log("[WEBHOOK] Midia nao suportada:", tipo);
-      await sendZAPIMessage(body.phone, "Não consigo processar esse tipo de mídia. Pode me escrever ou enviar uma imagem?");
-      return;
+      await sendZAPIMessage(body.phone, "Recebido, nosso consultor entrará em contato em breve.");
+      return res.sendStatus(200);
     }
 
     const userId = body.phone;
