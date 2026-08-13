@@ -1697,7 +1697,12 @@ app.post("/admin/knowledge", async (req, res) => {
   if (!content) return res.status(400).json({ error: "content obrigatorio" });
   if (!VOYAGE_API_KEY) return res.status(503).json({ error: "VOYAGE_API_KEY nao configurado" });
   try {
-    const embedding = await gerarEmbedding(content);
+    // O vetor precisa casar com a LINGUAGEM DO LEAD, não com o texto da instrução.
+    // "context" é escrito para soar como a fala real do cliente ("cliente acha caro");
+    // "content" costuma ser a instrução pra IA ("não negocie o valor..."), que embeda
+    // mal contra mensagens de cliente. Prioriza context na hora de gerar o vetor.
+    const textoParaEmbedding = context ? `${context}. ${content}` : content;
+    const embedding = await gerarEmbedding(textoParaEmbedding);
     const embStr    = "[" + embedding.join(",") + "]";
     await db.query(
       `INSERT INTO knowledge_base (client_id, source_type, content, context, embedding) VALUES ($1, $2, $3, $4, $5::vector)`,

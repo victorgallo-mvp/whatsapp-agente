@@ -115,7 +115,10 @@ async function ingerir({ base, chunks, sourceType, clientId, dryRun, offset = 0,
           content,
           source_type: sourceType,
           client_id: clientId,
-          context: `chunk ${offset + i + 1}/${total}`,
+          // Sem "context" aqui de propósito: o servidor usa context pra gerar o vetor
+          // (prioriza casar com a fala do lead). Um rótulo tipo "chunk 3/10" só
+          // atrapalharia a busca por similaridade — o content descritivo já casa
+          // bem sozinho com perguntas sobre o conteúdo institucional.
         });
         console.log(`OK [${offset + i + 1}/${total}]`, res.data.preview);
         ok++;
