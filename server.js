@@ -414,7 +414,7 @@ async function gerarEmbedding(texto) {
   return res.data.data[0].embedding;
 }
 
-async function buscarConhecimento(mensagem, topK = 4) {
+async function buscarConhecimento(mensagem, topK = 4, minSimilarity = 0.6) {
   if (!VOYAGE_API_KEY) return [];
   try {
     const emb    = await gerarEmbedding(mensagem);
@@ -424,10 +424,10 @@ async function buscarConhecimento(mensagem, topK = 4) {
               1 - (embedding <=> $1::vector) AS similarity
        FROM knowledge_base
        WHERE client_id = $3
-         AND 1 - (embedding <=> $1::vector) >= 0.6
+         AND 1 - (embedding <=> $1::vector) >= $4
        ORDER BY similarity DESC
        LIMIT $2`,
-      [embStr, topK, CLIENT_ID]
+      [embStr, topK, CLIENT_ID, minSimilarity]
     );
     return res.rows;
   } catch (err) {
@@ -1719,10 +1719,11 @@ app.post("/admin/knowledge", async (req, res) => {
 app.get("/admin/knowledge/search", async (req, res) => {
   const q = req.query.q;
   if (!q) return res.status(400).json({ error: "query param 'q' obrigatorio" });
-  const topK = parseInt(req.query.topK) || 4;
+  const topK   = parseInt(req.query.topK) || 4;
+  const minSim = req.query.minSim !== undefined ? parseFloat(req.query.minSim) : 0.6;
   try {
-    const resultados = await buscarConhecimento(q, topK);
-    res.json({ query: q, client_id: CLIENT_ID, count: resultados.length, resultados });
+    const resultados = await buscarConhecimento(q, topK, minSim);
+    res.json({ query: q, client_id: CLIENT_ID, minSimilarity: minSim, count: resultados.length, resultados });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
