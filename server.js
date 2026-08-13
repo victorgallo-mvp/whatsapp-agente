@@ -1711,6 +1711,23 @@ app.post("/admin/knowledge", async (req, res) => {
   }
 });
 
+// ─── ADMIN: DIAGNÓSTICO DO RAG ───────────────────────────────────────────────
+// Roda exatamente a mesma busca que a Olivia usa em tempo real, pra auditar
+// o que seria recuperado para uma mensagem qualquer — sem precisar simular
+// uma conversa inteira no WhatsApp. Útil pra checar cobertura e detectar
+// buracos no conhecimento (query sem nenhum resultado acima do threshold).
+app.get("/admin/knowledge/search", async (req, res) => {
+  const q = req.query.q;
+  if (!q) return res.status(400).json({ error: "query param 'q' obrigatorio" });
+  const topK = parseInt(req.query.topK) || 4;
+  try {
+    const resultados = await buscarConhecimento(q, topK);
+    res.json({ query: q, client_id: CLIENT_ID, count: resultados.length, resultados });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── OAUTH GOOGLE (gerar refresh token uma única vez) ────────────────────────
 app.get("/auth", (req, res) => {
   if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !GOOGLE_REDIRECT_URI) {
