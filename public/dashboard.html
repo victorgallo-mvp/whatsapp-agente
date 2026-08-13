@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Comunynk — Painel Olivia</title>
+<title>Viltrum — Painel Olivia</title>
 <style>
   :root {
     --cyan:     #00AEEF;
@@ -209,15 +209,15 @@
     display: flex; flex-direction: column; gap: 8px; background: var(--surface);
   }
   .msg-row { display: flex; flex-direction: column; max-width: 82%; }
-  .msg-row.user      { align-self: flex-end; align-items: flex-end; }
-  .msg-row.assistant { align-self: flex-start; align-items: flex-start; }
+  .msg-row.user      { align-self: flex-start; align-items: flex-start; }
+  .msg-row.assistant { align-self: flex-end; align-items: flex-end; }
   .msg-row.system    { align-self: center; max-width: 96%; }
   .msg-bubble {
     padding: 8px 12px; border-radius: 14px; font-size: 13px;
     line-height: 1.52; white-space: pre-wrap; word-break: break-word;
   }
-  .msg-row.user      .msg-bubble { background: #D4F3E5; color: #0d3d27; border-bottom-right-radius: 4px; }
-  .msg-row.assistant .msg-bubble { background: var(--white); border-bottom-left-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,.09); color: var(--text); }
+  .msg-row.user      .msg-bubble { background: var(--white); border-bottom-left-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,.09); color: var(--text); }
+  .msg-row.assistant .msg-bubble { background: #D4F3E5; color: #0d3d27; border-bottom-right-radius: 4px; }
   .msg-row.system    .msg-bubble { background: var(--surface); color: var(--muted); font-size: 12px; text-align: center; border-radius: 8px; border: 1px solid var(--border); }
   .msg-tag  { font-size: 10px; color: var(--muted); margin-bottom: 2px; }
   .msg-time { font-size: 10.5px; color: var(--muted); margin-top: 3px; }
@@ -317,7 +317,7 @@
 
 <header>
   <div class="header-brand">
-    <span class="brand-name"><span class="cc">C</span>OMUNYNK</span>
+    <span class="brand-name"><span class="cc">V</span>ILTRUM</span>
     <span class="brand-sub">Painel · Olivia</span>
   </div>
   <span id="conn-status" class="disconnected">Conectando...</span>
