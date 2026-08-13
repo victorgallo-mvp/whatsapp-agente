@@ -93,7 +93,11 @@ async function seed() {
     return;
   }
 
-  for (const entry of entries) {
+  const startAt = parseInt((process.argv.find(a => a.startsWith("--start=")) || "--start=1").split("=")[1], 10);
+  const lista   = entries.slice(startAt - 1);
+  console.log(`Enviando ${lista.length} de ${entries.length} entradas, a partir da #${startAt}.`);
+
+  for (const entry of lista) {
     let ok = false;
     while (!ok) {
       try {
@@ -101,16 +105,19 @@ async function seed() {
         console.log("OK:", entry.context);
         ok = true;
       } catch (err) {
-        if (err.response?.status === 429) {
-          console.log("Rate limit, aguardando 20s...");
-          await new Promise(r => setTimeout(r, 20000));
+        // /admin/knowledge sempre responde 500, mesmo quando a causa é rate limit do
+        // Voyage por trás — detecta pelo texto da mensagem, não pelo status HTTP.
+        const msg = JSON.stringify(err.response?.data || err.message || "");
+        if (err.response?.status === 429 || msg.includes("429")) {
+          console.log("Rate limit, aguardando 15s...");
+          await new Promise(r => setTimeout(r, 15000));
         } else {
           console.error("ERRO:", err.response?.data || err.message);
           ok = true;
         }
       }
     }
-    await new Promise(r => setTimeout(r, 1500));
+    await new Promise(r => setTimeout(r, 4000));
   }
   console.log("\nConcluído.");
 }

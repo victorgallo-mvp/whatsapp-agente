@@ -87,7 +87,7 @@ function chunkTexto(texto, maxChars = 900) {
   return chunks.filter(c => c.length > 20); // descarta fragmentos residuais
 }
 
-async function ingerir({ base, chunks, sourceType, clientId, dryRun }) {
+async function ingerir({ base, chunks, sourceType, clientId, dryRun, offset = 0, total = chunks.length }) {
   if (dryRun) {
     chunks.forEach((c, i) => {
       console.log(`\n── chunk ${i + 1}/${chunks.length} (${c.length} chars) ──`);
@@ -97,34 +97,42 @@ async function ingerir({ base, chunks, sourceType, clientId, dryRun }) {
     return;
   }
 
+  // O /admin/knowledge sempre responde 500 (mesmo quando a causa é rate limit
+  // do Voyage por trás) — então detectamos "429" pelo texto da mensagem, não
+  // pelo status HTTP da nossa própria resposta.
+  const ehRateLimit = err => {
+    const msg = JSON.stringify(err.response?.data || err.message || "");
+    return err.response?.status === 429 || msg.includes("429");
+  };
+
   let ok = 0, falhas = 0;
   for (let i = 0; i < chunks.length; i++) {
     const content = chunks[i];
     let tentativas = 0;
-    while (tentativas < 5) {
+    while (tentativas < 6) {
       try {
         const res = await axios.post(`${base}/admin/knowledge`, {
           content,
           source_type: sourceType,
           client_id: clientId,
-          context: `chunk ${i + 1}/${chunks.length}`,
+          context: `chunk ${offset + i + 1}/${total}`,
         });
-        console.log(`OK [${i + 1}/${chunks.length}]`, res.data.preview);
+        console.log(`OK [${offset + i + 1}/${total}]`, res.data.preview);
         ok++;
         break;
       } catch (err) {
         tentativas++;
-        if (err.response?.status === 429) {
-          console.log("Rate limit, aguardando 20s...");
-          await new Promise(r => setTimeout(r, 20000));
+        if (ehRateLimit(err) && tentativas < 6) {
+          console.log(`Rate limit, aguardando 15s (tentativa ${tentativas}/5)...`);
+          await new Promise(r => setTimeout(r, 15000));
         } else {
-          console.error(`ERRO [${i + 1}/${chunks.length}]:`, err.response?.data || err.message);
+          console.error(`ERRO [${offset + i + 1}/${total}]:`, err.response?.data || err.message);
           falhas++;
           break;
         }
       }
     }
-    await new Promise(r => setTimeout(r, 1500)); // evita rajada
+    await new Promise(r => setTimeout(r, 4000)); // evita rajada
   }
   console.log(`\nConcluído. ${ok} indexados, ${falhas} falharam.`);
 }
@@ -143,11 +151,13 @@ async function main() {
   const maxChars   = parseInt(args["max-chars"] || "900", 10);
 
   console.log("Lendo:", file);
-  const texto  = await extrairTexto(file);
-  const chunks = chunkTexto(texto, maxChars);
-  console.log(`Gerados ${chunks.length} chunks (~${maxChars} chars cada) para client_id="${clientId}".`);
+  const texto      = await extrairTexto(file);
+  const todosChunks = chunkTexto(texto, maxChars);
+  const startChunk = parseInt(args["start-chunk"] || "1", 10); // 1-indexado, útil pra retomar após falha parcial
+  const chunks     = todosChunks.slice(startChunk - 1);
+  console.log(`Gerados ${todosChunks.length} chunks (~${maxChars} chars cada) para client_id="${clientId}". Enviando a partir do chunk ${startChunk}.`);
 
-  await ingerir({ base, chunks, sourceType, clientId, dryRun: !!args["dry-run"] });
+  await ingerir({ base, chunks, sourceType, clientId, dryRun: !!args["dry-run"], offset: startChunk - 1, total: todosChunks.length });
 }
 
 main().catch(err => {
