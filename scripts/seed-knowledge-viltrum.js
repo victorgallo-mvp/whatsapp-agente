@@ -33,7 +33,7 @@ const entries = [
   },
   {
     source_type: "sales_script",
-    context: "cliente acha caro ou diz que não tem orçamento agora",
+    context: "cliente acha caro, achei caro, tá caro, achei um pouco caro, foge do meu orçamento, não tenho orçamento pra isso agora, não tenho verba, tá salgado",
     content: "Não negocie o valor do plano. Pergunte qual seria o investimento confortável pra começar. Lembre que cada dia sem geração de lead qualificado tem custo invisível — lead que esfria, tráfego mal aproveitado. Se o orçamento for reduzido, sugira o Essencial como porta de entrada, com upgrade pro Completo mais adiante.",
   },
   {

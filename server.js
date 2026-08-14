@@ -416,9 +416,11 @@ async function gerarEmbedding(texto) {
 
 // Threshold calibrado empiricamente com voyage-3-lite: match direto de contexto
 // salvo fica em ~0.5-0.55, relacionado mas genérico em ~0.35-0.45, irrelevante
-// abaixo de ~0.31. 0.4 pega o relevante sem trazer ruído. Reajustar se a base
-// crescer muito ou mudar de embedding model.
-async function buscarConhecimento(mensagem, topK = 4, minSimilarity = 0.4) {
+// tende a ficar abaixo de ~0.31. 0.35 pega objeção real (mesmo com frase curta e
+// coloquial) com margem seguindo abaixo do que aparece pra pergunta fora do
+// escopo da base. Reajustar se a base crescer muito ou mudar de embedding model
+// — vale reauditar com /admin/knowledge/search?minSim=0 de tempos em tempos.
+async function buscarConhecimento(mensagem, topK = 4, minSimilarity = 0.35) {
   if (!VOYAGE_API_KEY) return [];
   try {
     let emb;
@@ -1738,7 +1740,7 @@ app.get("/admin/knowledge/search", async (req, res) => {
   const q = req.query.q;
   if (!q) return res.status(400).json({ error: "query param 'q' obrigatorio" });
   const topK   = parseInt(req.query.topK) || 4;
-  const minSim = req.query.minSim !== undefined ? parseFloat(req.query.minSim) : 0.4;
+  const minSim = req.query.minSim !== undefined ? parseFloat(req.query.minSim) : 0.35;
   try {
     const resultados = await buscarConhecimento(q, topK, minSim);
     res.json({ query: q, client_id: CLIENT_ID, minSimilarity: minSim, count: resultados.length, resultados });
