@@ -414,10 +414,23 @@ async function gerarEmbedding(texto) {
   return res.data.data[0].embedding;
 }
 
-async function buscarConhecimento(mensagem, topK = 4, minSimilarity = 0.6) {
+// Threshold calibrado empiricamente com voyage-3-lite: match direto de contexto
+// salvo fica em ~0.5-0.55, relacionado mas genérico em ~0.35-0.45, irrelevante
+// abaixo de ~0.31. 0.4 pega o relevante sem trazer ruído. Reajustar se a base
+// crescer muito ou mudar de embedding model.
+async function buscarConhecimento(mensagem, topK = 4, minSimilarity = 0.4) {
   if (!VOYAGE_API_KEY) return [];
   try {
-    const emb    = await gerarEmbedding(mensagem);
+    let emb;
+    try {
+      emb = await gerarEmbedding(mensagem);
+    } catch (err) {
+      // Retry único — o Voyage free tier rate-limita fácil e uma falha aqui
+      // fazia a Olivia responder sem nenhum contexto de conhecimento, em
+      // silêncio (só o console.error do catch de fora, sem retry).
+      await new Promise(r => setTimeout(r, 1500));
+      emb = await gerarEmbedding(mensagem);
+    }
     const embStr = "[" + emb.join(",") + "]";
     const res    = await db.query(
       `SELECT content, context, source_type,
@@ -1725,7 +1738,7 @@ app.get("/admin/knowledge/search", async (req, res) => {
   const q = req.query.q;
   if (!q) return res.status(400).json({ error: "query param 'q' obrigatorio" });
   const topK   = parseInt(req.query.topK) || 4;
-  const minSim = req.query.minSim !== undefined ? parseFloat(req.query.minSim) : 0.6;
+  const minSim = req.query.minSim !== undefined ? parseFloat(req.query.minSim) : 0.4;
   try {
     const resultados = await buscarConhecimento(q, topK, minSim);
     res.json({ query: q, client_id: CLIENT_ID, minSimilarity: minSim, count: resultados.length, resultados });
