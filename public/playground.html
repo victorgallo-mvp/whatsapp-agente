@@ -56,6 +56,27 @@
   .debug-entry .ctx { font-size: 12px; color: var(--muted); margin-top: 3px; }
   .empty-hint { color: var(--muted); font-size: 13px; text-align: center; margin-top: 40px; }
   .loading { color: var(--muted); font-size: 13px; padding: 4px 14px; }
+
+  /* ─── MOBILE ─────────────────────────── */
+  @media (max-width: 768px) {
+    header { padding: 10px 14px; gap: 8px; }
+    header .badge { display: none; } /* texto longo, só atrapalha em tela estreita */
+    select, button { padding: 8px 10px; font-size: 12.5px; }
+
+    /* debug-col em 320px fixo tomava a tela quase inteira num celular —
+       empilha embaixo do chat em vez de ficar do lado, com altura limitada. */
+    main { flex-direction: column; overflow-y: auto; }
+    #chat-col { min-height: 55vh; }
+    #debug-col {
+      width: 100%; flex-shrink: 0; border-left: none;
+      border-top: 1px solid var(--border); max-height: 240px;
+    }
+
+    #messages { padding: 14px; }
+    .row { max-width: 88%; }
+    #input-row { padding: 12px 14px; }
+    #msg-input { font-size: 16px; } /* evita zoom automático do Safari ao focar */
+  }
 </style>
 </head>
 <body>
