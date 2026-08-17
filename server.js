@@ -290,7 +290,7 @@ async function gerarEmbedding(texto) {
 // coloquial) com margem seguindo abaixo do que aparece pra pergunta fora do
 // escopo da base. Reajustar se a base crescer muito ou mudar de embedding model
 // — vale reauditar com /admin/knowledge/search?minSim=0 de tempos em tempos.
-async function buscarConhecimento(mensagem, topK = 4, minSimilarity = 0.35) {
+async function buscarConhecimento(mensagem, topK = 4, minSimilarity = 0.35, clientId = CLIENT_ID) {
   if (!VOYAGE_API_KEY) return [];
   try {
     let emb;
@@ -312,7 +312,7 @@ async function buscarConhecimento(mensagem, topK = 4, minSimilarity = 0.35) {
          AND 1 - (embedding <=> $1::vector) >= $4
        ORDER BY similarity DESC
        LIMIT $2`,
-      [embStr, topK, CLIENT_ID, minSimilarity]
+      [embStr, topK, clientId, minSimilarity]
     );
     return res.rows;
   } catch (err) {
@@ -1609,14 +1609,99 @@ app.post("/admin/knowledge", async (req, res) => {
 app.get("/admin/knowledge/search", async (req, res) => {
   const q = req.query.q;
   if (!q) return res.status(400).json({ error: "query param 'q' obrigatorio" });
-  const topK   = parseInt(req.query.topK) || 4;
-  const minSim = req.query.minSim !== undefined ? parseFloat(req.query.minSim) : 0.35;
+  const topK     = parseInt(req.query.topK) || 4;
+  const minSim   = req.query.minSim !== undefined ? parseFloat(req.query.minSim) : 0.35;
+  const clientId = req.query.clientId || CLIENT_ID;
   try {
-    const resultados = await buscarConhecimento(q, topK, minSim);
-    res.json({ query: q, client_id: CLIENT_ID, minSimilarity: minSim, count: resultados.length, resultados });
+    const resultados = await buscarConhecimento(q, topK, minSim, clientId);
+    res.json({ query: q, client_id: clientId, minSimilarity: minSim, count: resultados.length, resultados });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// ─── ADMIN: PLAYGROUND DE CONVERSA (sem WhatsApp) ────────────────────────────
+// Testa qualquer clients/<slug>.js direto por chat, sem precisar de instância
+// Evolution nem número conectado. Histórico fica só em memória (Map abaixo) —
+// nunca grava em "mensagens"/"leads", então não polui o banco real nem o
+// dashboard com conversa de teste. Reinicia sozinho se o processo reiniciar.
+const playgroundSessions = new Map(); // sessionId -> [{ role, content }]
+const TAGS_GATILHO = ["LEAD_CAPTURADO", "VISITA_SOLICITADA", "ARTE_APROVADA", "ARTE_REVISAO",
+                       "ORCAMENTO_APROVADO", "VISITA_REAGENDADA", "VISITA_CANCELADA", "PRECISA_SUPORTE"];
+
+app.get("/admin/playground/clients", (req, res) => {
+  const fs = require("fs");
+  const arquivos = fs.readdirSync(path.join(__dirname, "clients"))
+    .filter(f => f.endsWith(".js"))
+    .map(f => f.replace(/\.js$/, ""));
+  res.json({ clients: arquivos });
+});
+
+app.post("/admin/playground/reset", (req, res) => {
+  const { sessionId } = req.body;
+  if (sessionId) playgroundSessions.delete(sessionId);
+  res.json({ ok: true });
+});
+
+app.post("/admin/playground/chat", async (req, res) => {
+  const { clientSlug, sessionId, message } = req.body;
+  if (!clientSlug || !sessionId || !message) {
+    return res.status(400).json({ error: "clientSlug, sessionId e message são obrigatórios" });
+  }
+
+  let clientConfig;
+  try {
+    clientConfig = require(`./clients/${clientSlug}`);
+  } catch (err) {
+    return res.status(404).json({ error: `Cliente "${clientSlug}" não encontrado em clients/` });
+  }
+
+  if (!playgroundSessions.has(sessionId)) playgroundSessions.set(sessionId, []);
+  const history = playgroundSessions.get(sessionId);
+  history.push({ role: "user", content: message });
+
+  try {
+    const knowledge = await buscarConhecimento(message, 4, 0.35, clientSlug);
+
+    const d      = dataAtualStr();
+    const system = `DATA DE HOJE: ${d}. Nunca use datas anteriores a esta. Calcule sempre a partir desta data.\n\n` +
+                   clientConfig.instructions +
+                   `\n\nLEMBRETE FINAL: hoje é ${d}. Qualquer data de visita deve ser calculada a partir daqui.`;
+
+    const response = await chamarClaude({
+      model:      "claude-sonnet-4-6",
+      max_tokens: 1000,
+      system,
+      messages:   mensagensComData(history, null, knowledge, null),
+    });
+
+    const reply = response.data.content?.[0]?.text || "";
+    history.push({ role: "assistant", content: reply });
+
+    let replyLimpo = reply;
+    const tagsDetectadas = [];
+    for (const tag of TAGS_GATILHO) {
+      const re = new RegExp(`\\[${tag}\\].*`, "gs");
+      if (re.test(reply)) tagsDetectadas.push(tag);
+      replyLimpo = replyLimpo.replace(re, "").trim();
+    }
+
+    res.json({
+      reply: replyLimpo,
+      tagsDetectadas,
+      knowledgeUsado: knowledge.map(k => ({
+        context: k.context, source_type: k.source_type,
+        similarity: Math.round(k.similarity * 1000) / 1000,
+      })),
+    });
+  } catch (err) {
+    console.error("[PLAYGROUND] Erro:", err.response?.data || err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/playground", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "playground.html"));
 });
 
 // ─── OAUTH GOOGLE (gerar refresh token uma única vez) ────────────────────────
