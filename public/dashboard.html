@@ -311,6 +311,44 @@
     box-shadow: 0 4px 16px rgba(0,0,0,.2);
   }
   #toast.show { opacity: 1; }
+
+  /* ─── MOBILE ─────────────────────────── */
+  @media (max-width: 768px) {
+    header { padding: 0 14px; gap: 10px; }
+    #conn-status { font-size: 9.5px; padding: 3px 8px; }
+
+    .toolbar { padding: 8px 12px; gap: 8px; }
+    .toolbar input { max-width: none; }
+    .novo-lead-btn { flex-shrink: 0; padding: 8px 13px; }
+
+    /* Kanban vira scroll horizontal com snap — uma coluna por vez, feito pra
+       dedo, em vez de espremer as 4 colunas lado a lado numa tela estreita. */
+    .kanban-area { padding: 10px; gap: 10px; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; }
+    .kanban-col { min-width: calc(100vw - 40px); max-width: calc(100vw - 40px); scroll-snap-align: start; }
+
+    /* O painel de chat deixa de ser lateral (420px não cabe) e vira tela
+       cheia por cima do kanban — padrão mobile normal de lista → detalhe. */
+    .chat-side { position: fixed; inset: 0; z-index: 40; width: 0; }
+    .chat-side.open { width: 100vw; }
+
+    .chat-header { padding: 11px 14px; }
+    .chat-close-btn { font-size: 22px; padding: 5px 9px; }
+    .toggle-btn { padding: 8px 12px; font-size: 12px; }
+
+    .messages { padding: 12px; }
+    .msg-row { max-width: 90%; }
+
+    /* font-size 16px evita o zoom automático do Safari ao focar o campo */
+    .toolbar input, .input-area textarea, .img-caption-input,
+    #nl-phone, #nl-nome, #nl-empresa, #nl-produto, #activate-msg {
+      font-size: 16px !important;
+    }
+    .input-area { padding: 10px; }
+    .input-area textarea { height: 44px; }
+    .send-btn, .img-btn { height: 44px; }
+
+    .modal-box { width: 100%; max-width: 92vw; padding: 20px; }
+  }
 </style>
 </head>
 <body>
