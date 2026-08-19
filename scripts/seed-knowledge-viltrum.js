@@ -81,6 +81,28 @@ const entries = [
     context: "cliente já usa vários fornecedores diferentes para tráfego, redes, site e atendimento",
     content: "Reconheça a dor de coordenar tudo isso sozinho: quando ninguém se responsabiliza pelo resultado geral, a culpa sempre sobra pro dono do negócio administrar. A Viltrum une tráfego, redes, vídeo, landing page e atendimento por IA num único time e numa única prestação de contas — um ponto de contato, um resultado só pelo qual alguém responde.",
   },
+
+  // ─── ENTRADAS 14+ ──────────────────────────────────────────────────────────
+  // Só entra aqui o que NÃO está no prompt (clients/viltrum.js). Planos, preços,
+  // cases, diferenciais e dores já estão lá — reindexar isso no RAG só faz a
+  // busca devolver ao modelo o que ele já sabe, gastando uma chamada de
+  // embedding por mensagem. Os 10 chunks do PDF institucional foram removidos
+  // por esse motivo (e porque saíam com texto sujo da extração).
+  {
+    source_type: "institucional",
+    context: "qual o telefone de vocês, como falo com a viltrum, qual o email, instagram, site, onde encontro vocês, canal de contato",
+    content: "Contatos da Viltrum: telefone (35) 3195-4590, e-mail viltrumarketing@gmail.com, Instagram @viltrum_marketing, site viltrum-marketing.com.br.",
+  },
+  {
+    source_type: "institucional",
+    context: "como funciona o dashboard, que métricas eu consigo ver, como acompanho a campanha, tenho relatório, consigo ver resultado em tempo real",
+    content: "O dashboard próprio é incluso em todos os planos, sem custo à parte, e mostra em tempo real: métricas de mídia (investimento diário, alcance, cliques, custo por conversa e custo por lead qualificado), métricas de atendimento (volume de conversas iniciadas pela Olivia, taxa de qualificação, tempo médio de resposta e leads passados para atendimento humano) e comparação histórica semana a semana e mês a mês. É responsivo, dá para acompanhar do celular. O cliente não precisa esperar relatório mensal nem reunião para saber o que está acontecendo com o investimento.",
+  },
+  {
+    source_type: "institucional",
+    context: "o que é cobrado todo mês e o que é pago uma vez só, é mensalidade ou pagamento único, como funciona a cobrança de cada serviço",
+    content: "Formato de cobrança por serviço na Viltrum: tráfego pago, gestão de redes sociais e produção de vídeo são mensais, dentro do plano. Landing page é setup único (pagamento uma vez, 50% na entrada). A Olivia é setup mais mensal — o setup é cobrado uma única vez no fechamento e o atendimento segue dentro do plano Completo. Google Meu Negócio é setup único. O dashboard é incluso. O investimento em mídia paga é aportado direto na conta de anúncio do cliente e não passa pela Viltrum.",
+  },
 ];
 
 async function seed() {
