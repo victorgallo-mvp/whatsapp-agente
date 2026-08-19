@@ -311,6 +311,34 @@ function montarQueryRAG(historico, mensagemAtual, janela = 2) {
   return [...anteriores, mensagemAtual].join(" ").slice(0, 1000);
 }
 
+function normalizarTexto(s) {
+  return (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+}
+
+// Barreira contra contaminação entre modelos. Busca por similaridade não sabe
+// que "MXF 270 FI" e "Wolf 550" são produtos diferentes: perguntar a spec de um
+// recuperava a ficha do outro acima do threshold, e o modelo podia atribuir
+// peso/potência do produto errado ao cliente. Isso piora conforme a base cresce.
+//
+// Entradas com metadata.termos só sobrevivem se a query mencionar de fato aquele
+// produto. Entradas sem termos (script de objeção, institucional) passam sempre,
+// porque não são específicas de um item.
+function filtrarPorEscopo(rows, queryText) {
+  const q = normalizarTexto(queryText);
+  const mantidos = [];
+  const descartados = [];
+  for (const r of rows) {
+    const termos = r.metadata?.termos;
+    if (!Array.isArray(termos) || termos.length === 0) { mantidos.push(r); continue; }
+    if (termos.some(t => q.includes(normalizarTexto(t)))) mantidos.push(r);
+    else descartados.push(r.metadata?.escopo || termos[0]);
+  }
+  if (descartados.length) {
+    console.log("[RAG] descartado por escopo (query nao menciona):", descartados.join(", "));
+  }
+  return mantidos;
+}
+
 // strict = true propaga o erro em vez de devolver lista vazia. No atendimento
 // real queremos degradar em silêncio (melhor responder sem conhecimento do que
 // não responder), mas no diagnóstico isso escondia falha de API disfarçada de
@@ -331,17 +359,20 @@ async function buscarConhecimento(mensagem, topK = 4, minSimilarity = 0.35, clie
       emb = await gerarEmbedding(mensagem);
     }
     const embStr = "[" + emb.join(",") + "]";
+    // Busca com folga (topK * 3) porque o filtro de escopo abaixo pode descartar
+    // resultados — sem a folga, uma ficha de outro modelo ocupando o topo faria
+    // a resposta certa ficar de fora do limite.
     const res    = await db.query(
-      `SELECT content, context, source_type,
+      `SELECT content, context, source_type, metadata,
               1 - (embedding <=> $1::vector) AS similarity
        FROM knowledge_base
        WHERE client_id = $3
          AND 1 - (embedding <=> $1::vector) >= $4
        ORDER BY similarity DESC
        LIMIT $2`,
-      [embStr, topK, clientId, minSimilarity]
+      [embStr, topK * 3, clientId, minSimilarity]
     );
-    return res.rows;
+    return filtrarPorEscopo(res.rows, mensagem).slice(0, topK);
   } catch (err) {
     // Loga distinto de "0 resultados": aqui a busca FALHOU, não é ausência de
     // conhecimento relevante. Sem essa distinção não dá pra saber se a base
@@ -1616,7 +1647,7 @@ app.get("/dashboard", (req, res) => {
 
 // ─── ADMIN: INDEXAR BASE DE CONHECIMENTO ─────────────────────────────────────
 app.post("/admin/knowledge", async (req, res) => {
-  const { content, context, source_type = "faq", client_id = CLIENT_ID } = req.body;
+  const { content, context, source_type = "faq", client_id = CLIENT_ID, metadata } = req.body;
   if (!content) return res.status(400).json({ error: "content obrigatorio" });
   if (!VOYAGE_API_KEY) return res.status(503).json({ error: "VOYAGE_API_KEY nao configurado" });
   try {
@@ -1627,12 +1658,15 @@ app.post("/admin/knowledge", async (req, res) => {
     const textoParaEmbedding = context ? `${context}. ${content}` : content;
     const embedding = await gerarEmbedding(textoParaEmbedding);
     const embStr    = "[" + embedding.join(",") + "]";
+    // metadata.termos escopa a entrada a um produto: ela só será recuperada se a
+    // conversa mencionar aquele produto (ver filtrarPorEscopo).
     await db.query(
-      `INSERT INTO knowledge_base (client_id, source_type, content, context, embedding) VALUES ($1, $2, $3, $4, $5::vector)`,
-      [client_id, source_type, content, context || null, embStr]
+      `INSERT INTO knowledge_base (client_id, source_type, content, context, embedding, metadata)
+       VALUES ($1, $2, $3, $4, $5::vector, COALESCE($6::jsonb, '{}'::jsonb))`,
+      [client_id, source_type, content, context || null, embStr, metadata ? JSON.stringify(metadata) : null]
     );
     console.log("[KNOWLEDGE] Indexado:", client_id, "|", source_type, "|", content.substring(0, 60));
-    res.json({ ok: true, client_id, source_type, preview: content.substring(0, 80) });
+    res.json({ ok: true, client_id, source_type, escopo: metadata?.escopo || null, preview: content.substring(0, 80) });
   } catch (err) {
     console.error("[KNOWLEDGE] Erro:", err.message);
     res.status(500).json({ error: err.message });

@@ -20,11 +20,16 @@ const entries = [
   {
     source_type: "ficha_tecnica",
     context: "mxf 270 fi motor, cilindrada, potência, torque, injeção eletrônica, transmissão, marchas, partida, quantos cv tem a 270",
+    // termos: a entrada só é recuperada se a conversa mencionar este modelo.
+    // Sem isso, perguntar spec do Wolf 550 trazia a ficha da 270 FI acima do
+    // threshold e a IA podia atribuir os números ao produto errado.
+    metadata: { escopo: "MXF 270 FI", termos: ["270 fi", "270fi", "270 f i", "270"] },
     content: "Ficha técnica MXF 270 FI — motor e desempenho. Motor: 4 tempos, 4 válvulas, gasolina, refrigerado a ar, monocilíndrico. Cilindrada real: 249,4 cc (o \"270\" é nome comercial do modelo). Potência máxima: 28 cv a 7.500 rpm. Torque: 2,7 kgf.m a 7.000 rpm. Alimentação: injeção eletrônica TBI Bosch 8.0. Transmissão: 6 marchas. Partida: elétrica. Movimentação: corrente, pinhão 12 dentes e coroa 52 dentes. Capacidade do tanque: 8 litros.",
   },
   {
     source_type: "ficha_tecnica",
     context: "mxf 270 fi suspensão, freio, roda, pneu, peso, altura do assento, altura do solo, entre-eixos, dimensões, quanto pesa a 270",
+    metadata: { escopo: "MXF 270 FI", termos: ["270 fi", "270fi", "270 f i", "270"] },
     content: "Ficha técnica MXF 270 FI — ciclística e dirigibilidade. Suspensão dianteira: invertida de longo curso (300 mm) com regulagem de compressão e retorno. Suspensão traseira: amortecedor com link, com regulagem de pré-carga, compressão e retorno, pressurizada a nitrogênio. Freio dianteiro: hidráulico a disco de 260 mm. Freio traseiro: hidráulico a disco de 220 mm. Roda dianteira: aro de alumínio e raios de aço inox 4 mm, pneu Kenda 80/100-21. Roda traseira: aro de alumínio e raios de aço inox 4 mm, pneu Kenda 120/80-18. Altura do assento: 910 mm. Altura do solo: 330 mm. Entre-eixos: 1.500 mm. Peso: 112 kg. Dimensões: 2.160 x 840 x 1.240 mm. Quadro: aço liga cromo-molibdênio de alta resistência. Painel: LED multifunções.",
   },
 ];
