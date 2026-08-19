@@ -311,16 +311,22 @@ function montarQueryRAG(historico, mensagemAtual, janela = 2) {
   return [...anteriores, mensagemAtual].join(" ").slice(0, 1000);
 }
 
-async function buscarConhecimento(mensagem, topK = 4, minSimilarity = 0.35, clientId = CLIENT_ID) {
-  if (!VOYAGE_API_KEY) return [];
+// strict = true propaga o erro em vez de devolver lista vazia. No atendimento
+// real queremos degradar em silêncio (melhor responder sem conhecimento do que
+// não responder), mas no diagnóstico isso escondia falha de API disfarçada de
+// "nada encontrado" — e leva a conclusão errada sobre a qualidade da base.
+async function buscarConhecimento(mensagem, topK = 4, minSimilarity = 0.35, clientId = CLIENT_ID, strict = false) {
+  if (!VOYAGE_API_KEY) {
+    if (strict) throw new Error("VOYAGE_API_KEY não configurado");
+    return [];
+  }
   try {
     let emb;
     try {
       emb = await gerarEmbedding(mensagem);
     } catch (err) {
-      // Retry único — o Voyage free tier rate-limita fácil e uma falha aqui
-      // fazia a Olivia responder sem nenhum contexto de conhecimento, em
-      // silêncio (só o console.error do catch de fora, sem retry).
+      // Retry — o Voyage free tier rate-limita fácil e uma falha aqui fazia a
+      // Olivia responder sem nenhum contexto de conhecimento, em silêncio.
       await new Promise(r => setTimeout(r, 1500));
       emb = await gerarEmbedding(mensagem);
     }
@@ -337,7 +343,11 @@ async function buscarConhecimento(mensagem, topK = 4, minSimilarity = 0.35, clie
     );
     return res.rows;
   } catch (err) {
-    console.error("[RAG] Erro ao buscar conhecimento:", err.message);
+    // Loga distinto de "0 resultados": aqui a busca FALHOU, não é ausência de
+    // conhecimento relevante. Sem essa distinção não dá pra saber se a base
+    // está ruim ou se a API de embedding está caindo.
+    console.error("[RAG][FALHA] Busca não executada:", err.response?.data?.error || err.message);
+    if (strict) throw err;
     return [];
   }
 }
@@ -1641,10 +1651,17 @@ app.get("/admin/knowledge/search", async (req, res) => {
   const minSim   = req.query.minSim !== undefined ? parseFloat(req.query.minSim) : 0.35;
   const clientId = req.query.clientId || CLIENT_ID;
   try {
-    const resultados = await buscarConhecimento(q, topK, minSim, clientId);
+    // strict: no diagnóstico, falha de embedding tem que aparecer como erro —
+    // não pode se disfarçar de "nenhum resultado relevante".
+    const resultados = await buscarConhecimento(q, topK, minSim, clientId, true);
     res.json({ query: q, client_id: clientId, minSimilarity: minSim, count: resultados.length, resultados });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    const detalhe = err.response?.data?.error || err.message;
+    res.status(502).json({
+      error: "busca falhou (nao confundir com ausencia de resultado)",
+      detalhe,
+      dica: String(detalhe).includes("429") ? "rate limit do Voyage — espere alguns segundos e repita" : undefined,
+    });
   }
 });
 
