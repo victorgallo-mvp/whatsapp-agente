@@ -45,6 +45,13 @@ const NOTIFICACOES = {
 // pra não quebrar o deploy atual se a env var não for setada.
 const CLIENT_SLUG  = process.env.CLIENT_SLUG || "viltrum";
 const AGENT_CONFIG = require(`./clients/${CLIENT_SLUG}`);
+
+// Atalhos usados nas notificações/e-mails — antes o nome da empresa vinha
+// cravado no texto ("Viltrum"), o que fazia todo deploy de outro cliente
+// mandar notificação assinada com o nome errado.
+const EMPRESA = AGENT_CONFIG.company;
+const AGENTE  = AGENT_CONFIG.name;
+
 const artes = {};
 
 // ─── POSTGRES ─────────────────────────────────────────────────────────────────
@@ -888,14 +895,18 @@ async function verificarGatilhos(reply, userId) {
     const foneWA    = formatarTelefoneWA(telefone);
 
     let assunto, intro, msgSugerida;
-    if (tipo === "consultoria") {
-      assunto = "Novo lead Viltrum - ainda decidindo o plano";
-      intro   = "Lead qualificado pela Olivia, ainda sem plano definido. Precisa de apoio para decidir o melhor caminho.";
-      msgSugerida = `Olá ${nome}, tudo bem? Sou da equipe da Viltrum. A Olivia me passou seu contato. Vi que você está buscando ${produto || "ajuda com marketing digital"} e posso te ajudar a definir o melhor caminho. Quando tiver um momento para conversarmos?`;
+    if (tipo === "reserva") {
+      assunto = `Reserva solicitada - ${EMPRESA}`;
+      intro   = `Cliente pediu para reservar uma unidade. Confirmar disponibilidade em estoque e retornar.`;
+      msgSugerida = `Olá ${nome}, tudo bem? Sou da equipe da ${EMPRESA}. A ${AGENTE} me passou seu contato sobre a reserva do ${produto}. Vou confirmar a disponibilidade e já te retorno com as condições.`;
+    } else if (tipo === "consultoria") {
+      assunto = `Novo lead ${EMPRESA} - ainda decidindo`;
+      intro   = `Lead qualificado pela ${AGENTE}, ainda sem decisão fechada. Precisa de apoio para definir o melhor caminho.`;
+      msgSugerida = `Olá ${nome}, tudo bem? Sou da equipe da ${EMPRESA}. A ${AGENTE} me passou seu contato. Vi que você está buscando ${produto || "mais informações"} e posso te ajudar a definir o melhor caminho. Quando tiver um momento para conversarmos?`;
     } else {
-      assunto = "Novo lead Viltrum - plano definido";
-      intro   = "Lead qualificado pela Olivia, já com plano de interesse definido. Pronto para receber a proposta.";
-      msgSugerida = `Olá ${nome}, tudo bem? Sou da equipe da Viltrum. A Olivia me passou seu contato. Você demonstrou interesse no ${produto} (${estimativa}). Posso te passar os próximos passos agora.`;
+      assunto = `Novo lead ${EMPRESA} - interesse definido`;
+      intro   = `Lead qualificado pela ${AGENTE}, já com interesse definido. Pronto para receber a proposta.`;
+      msgSugerida = `Olá ${nome}, tudo bem? Sou da equipe da ${EMPRESA}. A ${AGENTE} me passou seu contato. Você demonstrou interesse no ${produto} (${estimativa}). Posso te passar os próximos passos agora.`;
     }
 
     const corpo =
@@ -903,9 +914,9 @@ async function verificarGatilhos(reply, userId) {
       `Nome: ${nome}\n` +
       `Empresa: ${empresa}\n` +
       `Telefone: ${telefone}\n` +
-      `Plano de interesse: ${produto}\n` +
+      `Interesse: ${produto}\n` +
       `Valor: ${estimativa}\n` +
-      `Dor relatada: ${observacao}\n\n` +
+      `Observação: ${observacao}\n\n` +
       `Abrir conversa: https://wa.me/${foneWA}\n\n` +
       `Mensagem sugerida:\n"${msgSugerida}"`;
 
@@ -966,7 +977,7 @@ async function verificarGatilhos(reply, userId) {
       );
     }
 
-    const msgSugerida = `Olá ${nome}, tudo bem? Sou da equipe da Viltrum. Passando para confirmar nossa conversa agendada para ${dataStr} às ${horario}, por ${endereco}. Qualquer dúvida, estou à disposição.`;
+    const msgSugerida = `Olá ${nome}, tudo bem? Sou da equipe da ${EMPRESA}. Passando para confirmar nossa conversa agendada para ${dataStr} às ${horario}, por ${endereco}. Qualquer dúvida, estou à disposição.`;
 
     const corpo =
       `Reunião agendada pela Olivia.\n\n` +
@@ -982,7 +993,7 @@ async function verificarGatilhos(reply, userId) {
       `Mensagem sugerida para confirmar no dia:\n"${msgSugerida}"`;
 
     await upsertLead(userId, { nome, empresa, endereco, stage: "qualificando" });
-    await notificarResponsavel("Nova reunião agendada - Viltrum", corpo);
+    await notificarResponsavel(`Nova reunião agendada - ${EMPRESA}`, corpo);
   }
 
   if (reply.includes("[ARTE_APROVADA]")) {
@@ -991,7 +1002,7 @@ async function verificarGatilhos(reply, userId) {
     const telefone = linha.match(/Telefone: ([^|]+)/)?.[1]?.trim()   || "";
     const foneWA   = formatarTelefoneWA(telefone);
     await notificarResponsavel(
-      "Arte aprovada pelo cliente - Viltrum",
+      `Arte aprovada pelo cliente - ${EMPRESA}`,
       `${nome} aprovou a arte. Pronto para produção.\n\nTelefone: ${telefone}\nAbrir conversa: https://wa.me/${foneWA}`
     );
   }
@@ -1003,7 +1014,7 @@ async function verificarGatilhos(reply, userId) {
     const foneWA   = formatarTelefoneWA(telefone);
     await upsertLead(userId, { nome, stage: "fechando" });
     await notificarResponsavel(
-      "Proposta aprovada pelo lead - Viltrum",
+      `Proposta aprovada pelo lead - ${EMPRESA}`,
       `${nome} aprovou a proposta e está pronto para seguir.\n\nTelefone: ${telefone}\nAbrir conversa: https://wa.me/${foneWA}`
     );
     console.log("[ORCAMENTO_APROVADO]", nome, telefone);
@@ -1016,7 +1027,7 @@ async function verificarGatilhos(reply, userId) {
     const alteracao  = linha.match(/Alteracao: ([^|]+)/)?.[1]?.trim()     || "";
     const foneWA     = formatarTelefoneWA(telefone);
     await notificarResponsavel(
-      "Cliente pede alteração na arte - Viltrum",
+      `Cliente pede alteração na arte - ${EMPRESA}`,
       `${nome} quer alterações na arte.\n\nPedido: ${alteracao}\nTelefone: ${telefone}\nAbrir conversa: https://wa.me/${foneWA}`
     );
     const arteRaw = artes[userId] || await db.query(`SELECT arte_raw_msg FROM leads WHERE phone = $1`, [userId]).then(r => r.rows[0]?.arte_raw_msg ? JSON.parse(r.rows[0].arte_raw_msg) : null);
@@ -1069,7 +1080,7 @@ async function verificarGatilhos(reply, userId) {
     }
 
     await notificarResponsavel(
-      "Reunião reagendada - Viltrum",
+      `Reunião reagendada - ${EMPRESA}`,
       `${nome} reagendou a reunião para ${dataStr} às ${horario}.\n\nTelefone: ${telefone}\nAbrir conversa: https://wa.me/${foneWA}`
     );
     console.log("[VISITA_REAGENDADA]", nome, dataStr, horario);
@@ -1082,8 +1093,8 @@ async function verificarGatilhos(reply, userId) {
     const foneWA   = formatarTelefoneWA(telefone);
     await db.query(`UPDATE leads SET olivia_ativa = FALSE WHERE phone = $1`, [userId]);
     await notificarResponsavel(
-      "Olivia solicitou suporte — " + nome,
-      `Olivia identificou que esse atendimento precisa de um consultor.\n\nCliente: ${nome}\nTelefone: ${telefone}\nAbrir conversa: https://wa.me/${foneWA}\n\nOlivia foi desativada para esse chat. Reative quando concluir o atendimento.`
+      `${AGENTE} solicitou suporte — ` + nome,
+      `${AGENTE} identificou que esse atendimento precisa de um consultor.\n\nCliente: ${nome}\nTelefone: ${telefone}\nAbrir conversa: https://wa.me/${foneWA}\n\n${AGENTE} foi desativada para esse chat. Reative quando concluir o atendimento.`
     );
     console.log("[PRECISA_SUPORTE] Olivia desativada para:", userId);
   }
@@ -1104,7 +1115,7 @@ async function verificarGatilhos(reply, userId) {
     }
 
     await notificarResponsavel(
-      "Reunião cancelada - Viltrum",
+      `Reunião cancelada - ${EMPRESA}`,
       `${nome} cancelou a reunião.\n\nTelefone: ${telefone}\nAbrir conversa: https://wa.me/${foneWA}`
     );
     console.log("[VISITA_CANCELADA]", nome, telefone);
@@ -1308,7 +1319,7 @@ async function criarEventoCalendar(dadosVisita) {
     await axios.post(
       `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(GOOGLE_CALENDAR_ID || "primary")}/events`,
       {
-        summary:     "Reunião Viltrum - " + nome,
+        summary:     `Reunião ${EMPRESA} - ` + nome,
         description: "Plano de interesse: " + produto + "\nDados: " + dadosVisita,
         location:    endereco,
         start: { dateTime: fmtLocal(inicio), timeZone: "America/Sao_Paulo" },
@@ -1337,7 +1348,7 @@ async function notificarResponsavel(assunto, corpo) {
         auth: { user: NOTIFICACOES.gmail_remetente, pass: NOTIFICACOES.gmail_senha_app },
       });
       await transporter.sendMail({
-        from:    "Olivia Viltrum <" + NOTIFICACOES.gmail_remetente + ">",
+        from:    `${AGENTE} ${EMPRESA} <` + NOTIFICACOES.gmail_remetente + ">",
         to:      NOTIFICACOES.email_responsavel,
         subject: assunto,
         text:    corpo,
@@ -1457,7 +1468,7 @@ app.post("/api/leads/iniciar", async (req, res) => {
     if (!mensagemAbertura) {
       const nomeTxt   = nomeClean  ? `, ${nomeClean}`   : "";
       const prodTxt   = produtoClean ? ` em ${produtoClean}` : " em marketing digital com IA";
-      mensagemAbertura = `Olá${nomeTxt}! Sou a Olivia da Viltrum. Vi que você tem interesse${prodTxt}. Como posso te ajudar?`;
+      mensagemAbertura = `Olá${nomeTxt}! Sou a ${AGENTE} da ${EMPRESA}. Vi que você tem interesse${prodTxt}. Como posso te ajudar?`;
     }
 
     const mensagemLimpa = mensagemAbertura
