@@ -297,6 +297,20 @@ async function gerarEmbedding(texto) {
 // coloquial) com margem seguindo abaixo do que aparece pra pergunta fora do
 // escopo da base. Reajustar se a base crescer muito ou mudar de embedding model
 // — vale reauditar com /admin/knowledge/search?minSim=0 de tempos em tempos.
+// Monta a query de busca juntando as últimas mensagens do cliente com a atual.
+// Sem isso, pergunta de continuação com pronome ("qual a potência DELA?") não
+// tem nenhum termo pesquisável e o RAG volta vazio, mesmo com a resposta
+// indexada — o modelo/assunto ficou na mensagem anterior. Só mensagens do
+// cliente entram: incluir as respostas da IA enviesaria a busca pro que ela
+// já disse, em vez do que o cliente quer saber.
+function montarQueryRAG(historico, mensagemAtual, janela = 2) {
+  const anteriores = (historico || [])
+    .filter(m => m.role === "user")
+    .slice(-janela)
+    .map(m => m.content);
+  return [...anteriores, mensagemAtual].join(" ").slice(0, 1000);
+}
+
 async function buscarConhecimento(mensagem, topK = 4, minSimilarity = 0.35, clientId = CLIENT_ID) {
   if (!VOYAGE_API_KEY) return [];
   try {
@@ -520,9 +534,12 @@ async function processarMensagensPendentes(userId) {
       await addToHistory(userId, "user", item.content);
     }
 
-    const queryText = pending.items.map(i => i.content).join(" ");
+    const mensagemAtual = pending.items.map(i => i.content).join(" ");
     const KEYWORDS_AGENDA = ["visita", "horário", "horario", "agendar", "disponível", "disponivel", "agenda", "data"];
-    const ehAgendamento   = KEYWORDS_AGENDA.some(k => queryText.toLowerCase().includes(k));
+    const ehAgendamento   = KEYWORDS_AGENDA.some(k => mensagemAtual.toLowerCase().includes(k));
+
+    const historico = await getHistory(userId);
+    const queryText = montarQueryRAG(historico, mensagemAtual);
 
     const [lead, knowledge, slots] = await Promise.all([
       getLead(userId),
@@ -546,7 +563,7 @@ async function processarMensagensPendentes(userId) {
       model:      "claude-sonnet-4-6",
       max_tokens: 1000,
       system:     promptComData(),
-      messages:   mensagensComData(await getHistory(userId), lead, knowledge, slots),
+      messages:   mensagensComData(historico, lead, knowledge, slots),
     });
 
     let reply = response.data.content?.[0]?.text;
@@ -1669,10 +1686,12 @@ app.post("/admin/playground/chat", async (req, res) => {
 
   if (!playgroundSessions.has(sessionId)) playgroundSessions.set(sessionId, []);
   const history = playgroundSessions.get(sessionId);
+  // monta a query ANTES de empilhar a mensagem atual, pra não duplicá-la
+  const queryRAG = montarQueryRAG(history, message);
   history.push({ role: "user", content: message });
 
   try {
-    const knowledge = await buscarConhecimento(message, 4, 0.35, clientSlug);
+    const knowledge = await buscarConhecimento(queryRAG, 4, 0.35, clientSlug);
 
     const d      = dataAtualStr();
     const system = `DATA DE HOJE: ${d}. Nunca use datas anteriores a esta. Calcule sempre a partir desta data.\n\n` +
