@@ -141,6 +141,8 @@ consistente com o resto do padrão)
 
 ## Checklist rápido pra cada cliente novo
 
+- [ ] Ler `RISCO-BANIMENTO-WHATSAPP.md` e alinhar o risco com o cliente
+- [ ] Número aquecido: usado manualmente por 2 a 5 dias antes de ligar a automação
 - [ ] `clients/<slug>.js` criado e revisado
 - [ ] Projeto Evolution API no Railway (+ Postgres, + Redis opcional)
 - [ ] Instância criada e QR code escaneado no número do cliente
@@ -150,3 +152,6 @@ consistente com o resto do padrão)
 - [ ] `GET /` do bot responde com o `company` certo
 - [ ] Base de conhecimento inicial indexada
 - [ ] Teste manual: manda "oi" pro número do cliente e confere a resposta
+- [ ] Combinado com o time: **não usar o botão "Novo Lead"** em número de cliente
+      enquanto estiver no Evolution (é disparo pra quem não pediu contato, o
+      maior gatilho de banimento)
