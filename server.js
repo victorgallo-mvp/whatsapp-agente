@@ -639,6 +639,7 @@ async function processarMensagensPendentes(userId) {
       .replace(/\[VISITA_REAGENDADA\].*/g, "")
       .replace(/\[VISITA_CANCELADA\].*/g, "")
       .replace(/\[PRECISA_SUPORTE\].*/g, "")
+      .replace(/\[TRANSFERIR_ATENDENTE\].*/g, "")
       .trim();
 
     if (!conflito) {
@@ -1174,6 +1175,43 @@ async function verificarGatilhos(reply, userId) {
     console.log("[PRECISA_SUPORTE] Olivia desativada para:", userId);
   }
 
+  // ─── HANDOFF PARA ATENDENTE HUMANO ─────────────────────────────────────────
+  // Cliente declarou intenção de compra: a IA vai até aqui e o humano assume
+  // reserva, sinal, prazo e pagamento. Diferente do [PRECISA_SUPORTE], que é
+  // desistência do atendimento por falta de resposta — este é o desfecho bom,
+  // e a notificação precisa chegar pronta pro atendente entrar sem ler o
+  // histórico inteiro.
+  //
+  // A reativação é manual pelo dashboard, de propósito: se a IA voltasse
+  // sozinha, atropelaria o atendente no meio da negociação.
+  if (reply.includes("[TRANSFERIR_ATENDENTE]")) {
+    const linha      = reply.match(/\[TRANSFERIR_ATENDENTE\](.*)/)?.[1]?.trim() || "";
+    const nome       = linha.match(/Nome: ([^|]+)/)?.[1]?.trim()       || "Cliente";
+    const telefone   = linha.match(/Telefone: ([^|]+)/)?.[1]?.trim()   || userId;
+    const produto    = linha.match(/Produto: ([^|]+)/)?.[1]?.trim()    || "não informado";
+    const estimativa = linha.match(/Estimativa: ([^|]+)/)?.[1]?.trim() || "";
+    const observacao = linha.match(/Observacao: ([^|]+)/)?.[1]?.trim() || "";
+    const foneWA     = formatarTelefoneWA(telefone);
+
+    await upsertLead(userId, { nome, stage: "fechando" });
+    await db.query(`UPDATE leads SET olivia_ativa = FALSE WHERE phone = $1`, [userId]);
+
+    const corpo =
+      `Cliente com intenção de compra. Assuma a conversa para tratar reserva, sinal, prazo e pagamento.\n\n` +
+      `Nome: ${nome}\n` +
+      `Telefone: ${telefone}\n` +
+      `Interesse: ${produto}\n` +
+      (estimativa ? `Valor de tabela: ${estimativa}\n` : "") +
+      (observacao ? `Contexto: ${observacao}\n` : "") +
+      `\nAbrir conversa: https://wa.me/${foneWA}\n\n` +
+      `${AGENTE} já avisou o cliente que um consultor vai continuar, e foi desativada nesse chat. ` +
+      `Responda direto pelo WhatsApp ou pelo painel. Para religar a ${AGENTE} depois, use o toggle no dashboard.`;
+
+    await notificarResponsavel(`Intenção de compra — ${nome} (${produto})`, corpo);
+    broadcastSSE("leads_update", { phone: userId });
+    console.log("[TRANSFERIR_ATENDENTE]", nome, "|", produto, "| Olivia desativada para:", userId);
+  }
+
   if (reply.includes("[VISITA_CANCELADA]")) {
     const linha    = reply.match(/\[VISITA_CANCELADA\](.*)/)?.[1]?.trim() || "";
     const nome     = linha.match(/Nome: ([^|]+)/)?.[1]?.trim()     || "Cliente";
@@ -1550,6 +1588,7 @@ app.post("/api/leads/iniciar", async (req, res) => {
       .replace(/\[LEAD_CAPTURADO\].*/g, "")
       .replace(/\[VISITA_SOLICITADA\].*/g, "")
       .replace(/\[PRECISA_SUPORTE\].*/g, "")
+      .replace(/\[TRANSFERIR_ATENDENTE\].*/g, "")
       .trim();
 
     await sendZAPIMessage(phoneClean, mensagemLimpa);
@@ -1723,7 +1762,8 @@ app.get("/admin/knowledge/search", async (req, res) => {
 // dashboard com conversa de teste. Reinicia sozinho se o processo reiniciar.
 const playgroundSessions = new Map(); // sessionId -> [{ role, content }]
 const TAGS_GATILHO = ["LEAD_CAPTURADO", "VISITA_SOLICITADA", "ARTE_APROVADA", "ARTE_REVISAO",
-                       "ORCAMENTO_APROVADO", "VISITA_REAGENDADA", "VISITA_CANCELADA", "PRECISA_SUPORTE"];
+                       "ORCAMENTO_APROVADO", "VISITA_REAGENDADA", "VISITA_CANCELADA", "PRECISA_SUPORTE",
+                       "TRANSFERIR_ATENDENTE"];
 
 app.get("/admin/playground/clients", (req, res) => {
   const fs = require("fs");
