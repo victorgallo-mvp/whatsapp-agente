@@ -323,6 +323,12 @@ function normalizarTexto(s) {
 // Entradas com metadata.termos só sobrevivem se a query mencionar de fato aquele
 // produto. Entradas sem termos (script de objeção, institucional) passam sempre,
 // porque não são específicas de um item.
+//
+// metadata.excluir resolve o caso do nome de um modelo ser prefixo de outro:
+// "250 rxi" está inteiro dentro de "250 rxi-r", e "300 tsx" dentro de "300 tsx-r".
+// Sem exclusão, perguntar da versão -R traria também a ficha da versão base, que
+// tem componentes e preço diferentes. Se a query casar com algo em excluir, a
+// entrada cai mesmo que um termo tenha batido.
 function filtrarPorEscopo(rows, queryText) {
   const q = normalizarTexto(queryText);
   const mantidos = [];
@@ -330,11 +336,17 @@ function filtrarPorEscopo(rows, queryText) {
   for (const r of rows) {
     const termos = r.metadata?.termos;
     if (!Array.isArray(termos) || termos.length === 0) { mantidos.push(r); continue; }
+
+    const excluir = r.metadata?.excluir;
+    if (Array.isArray(excluir) && excluir.some(t => q.includes(normalizarTexto(t)))) {
+      descartados.push((r.metadata?.escopo || termos[0]) + " (variante excluida)");
+      continue;
+    }
     if (termos.some(t => q.includes(normalizarTexto(t)))) mantidos.push(r);
     else descartados.push(r.metadata?.escopo || termos[0]);
   }
   if (descartados.length) {
-    console.log("[RAG] descartado por escopo (query nao menciona):", descartados.join(", "));
+    console.log("[RAG] descartado por escopo:", descartados.join(", "));
   }
   return mantidos;
 }
