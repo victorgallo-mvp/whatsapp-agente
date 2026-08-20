@@ -337,12 +337,17 @@ function filtrarPorEscopo(rows, queryText) {
     const termos = r.metadata?.termos;
     if (!Array.isArray(termos) || termos.length === 0) { mantidos.push(r); continue; }
 
+    // Apaga do texto as ocorrências das variantes a excluir ANTES de testar os
+    // termos, em vez de descartar a entrada de cara. Assim "250 rxi-r" deixa de
+    // contar como menção à "250 rxi" — mas numa pergunta comparativa ("a 250 rxi
+    // e a rxi-r") o "250 rxi" que sobra ainda casa, e as duas fichas vêm, que é
+    // o certo pra comparar. Descartar direto fazia a comparação perder a base.
+    let alvo = q;
     const excluir = r.metadata?.excluir;
-    if (Array.isArray(excluir) && excluir.some(t => q.includes(normalizarTexto(t)))) {
-      descartados.push((r.metadata?.escopo || termos[0]) + " (variante excluida)");
-      continue;
+    if (Array.isArray(excluir)) {
+      for (const t of excluir) alvo = alvo.split(normalizarTexto(t)).join(" ");
     }
-    if (termos.some(t => q.includes(normalizarTexto(t)))) mantidos.push(r);
+    if (termos.some(t => alvo.includes(normalizarTexto(t)))) mantidos.push(r);
     else descartados.push(r.metadata?.escopo || termos[0]);
   }
   if (descartados.length) {
