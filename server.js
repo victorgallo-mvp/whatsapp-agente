@@ -753,6 +753,24 @@ app.post("/webhook", async (req, res) => {
         if (!isToResponsavel) {
           upsertLead(body.phone, {}).catch(err => console.error("[WEBHOOK] upsertLead fromMe erro:", err.message));
           await addToHistory(body.phone, "assistant", "[DIRETO] " + body.text.message);
+
+          // Humano respondeu direto pelo celular/WhatsApp Web: pausa a IA nesse
+          // chat. Sem isso os dois falam com o cliente ao mesmo tempo — o
+          // atendente escreve, o cliente responde, e a Olivia responde por cima
+          // sem saber do que foi combinado. Reativação é manual no dashboard,
+          // igual ao handoff.
+          //
+          // Seguro porque mensagem enviada pela nossa própria API não volta como
+          // fromMe: no histórico da Comunynk há 493 respostas da IA para apenas
+          // 34 [DIRETO], todas com cara de humano. Se ecoasse, os números seriam
+          // iguais e a IA se pausaria sozinha na primeira resposta.
+          const res = await db.query(
+            `UPDATE leads SET olivia_ativa = FALSE WHERE phone = $1 AND olivia_ativa IS DISTINCT FROM FALSE`,
+            [body.phone]
+          );
+          if (res.rowCount > 0) {
+            console.log("[DIRETO] Atendente assumiu — " + AGENTE + " pausada para:", body.phone);
+          }
           broadcastSSE("leads_update", { phone: body.phone });
         }
       }
