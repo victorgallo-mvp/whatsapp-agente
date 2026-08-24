@@ -144,6 +144,24 @@ async function initDb() {
     console.warn("[pgvector] Nao disponivel — RAG desativado:", err.message);
   }
 
+  // Conversas de teste do playground. Tabela separada de propósito: não polui
+  // "mensagens"/"leads" nem o dashboard com tráfego de teste, mas fica gravada.
+  // Antes o histórico vivia só em memória e todo deploy apagava — justo o
+  // material que a gente usa pra achar defeito de comportamento.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS playground_mensagens (
+      id          SERIAL PRIMARY KEY,
+      session_id  TEXT NOT NULL,
+      client_slug TEXT NOT NULL,
+      role        TEXT NOT NULL,
+      content     TEXT NOT NULL,
+      rag_usado   JSONB DEFAULT '[]',
+      tags        JSONB DEFAULT '[]',
+      created_at  TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await db.query(`CREATE INDEX IF NOT EXISTS idx_playground_sessao ON playground_mensagens (session_id, created_at)`);
+
   console.log("Banco de dados pronto.");
 }
 
@@ -1841,10 +1859,12 @@ app.get("/admin/playground/clients", (req, res) => {
   res.json({ clients: arquivos });
 });
 
+// Reiniciar limpa a memória e começa uma sessão nova, mas NÃO apaga o que foi
+// gravado: a conversa anterior continua consultável pra análise depois.
 app.post("/admin/playground/reset", (req, res) => {
   const { sessionId } = req.body;
   if (sessionId) playgroundSessions.delete(sessionId);
-  res.json({ ok: true });
+  res.json({ ok: true, novaSessao: require("crypto").randomUUID() });
 });
 
 app.post("/admin/playground/chat", async (req, res) => {
@@ -1860,7 +1880,23 @@ app.post("/admin/playground/chat", async (req, res) => {
     return res.status(404).json({ error: `Cliente "${clientSlug}" não encontrado em clients/` });
   }
 
-  if (!playgroundSessions.has(sessionId)) playgroundSessions.set(sessionId, []);
+  // Não está em memória: pode ser sessão nova ou sessão que sobreviveu a um
+  // deploy (o Map morre com o processo). Reidrata do banco antes de continuar,
+  // senão a conversa "reinicia" do zero no meio do teste sem ninguém entender.
+  if (!playgroundSessions.has(sessionId)) {
+    let anterior = [];
+    try {
+      const r = await db.query(
+        `SELECT role, content FROM playground_mensagens WHERE session_id = $1 ORDER BY created_at ASC LIMIT 60`,
+        [sessionId]
+      );
+      anterior = r.rows.map(m => ({ role: m.role, content: m.content }));
+      if (anterior.length) console.log(`[PLAYGROUND] sessão ${sessionId} reidratada do banco (${anterior.length} msgs)`);
+    } catch (err) {
+      console.error("[PLAYGROUND] Falha ao reidratar sessão:", err.message);
+    }
+    playgroundSessions.set(sessionId, anterior);
+  }
   const history = playgroundSessions.get(sessionId);
   history.push({ role: "user", content: message });
 
@@ -1894,16 +1930,58 @@ app.post("/admin/playground/chat", async (req, res) => {
       replyLimpo = replyLimpo.replace(re, "").trim();
     }
 
-    res.json({
-      reply: replyLimpo,
-      tagsDetectadas,
-      knowledgeUsado: knowledge.map(k => ({
-        context: k.context, source_type: k.source_type,
-        similarity: Math.round(k.similarity * 1000) / 1000,
-      })),
-    });
+    const ragUsado = knowledge.map(k => ({
+      context: k.context, source_type: k.source_type,
+      similarity: Math.round(k.similarity * 1000) / 1000,
+    }));
+
+    // Grava a troca. O que o RAG devolveu vai junto porque é isso que distingue
+    // "respondeu errado" de "respondeu sem ter o dado" — foi assim que achamos
+    // a resposta inventada de partida a kick, num turno em que a busca falhou.
+    db.query(
+      `INSERT INTO playground_mensagens (session_id, client_slug, role, content, rag_usado, tags)
+       VALUES ($1, $2, 'user', $3, '[]'::jsonb, '[]'::jsonb),
+              ($1, $2, 'assistant', $4, $5::jsonb, $6::jsonb)`,
+      [sessionId, clientSlug, message, reply, JSON.stringify(ragUsado), JSON.stringify(tagsDetectadas)]
+    ).catch(err => console.error("[PLAYGROUND] Falha ao gravar conversa:", err.message));
+
+    res.json({ reply: replyLimpo, tagsDetectadas, knowledgeUsado: ragUsado });
   } catch (err) {
     console.error("[PLAYGROUND] Erro:", err.response?.data || err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Lista as conversas de teste gravadas, mais recentes primeiro.
+app.get("/admin/playground/sessions", async (req, res) => {
+  try {
+    const r = await db.query(
+      `SELECT session_id, client_slug, COUNT(*)::int AS msgs,
+              MIN(created_at) AS inicio, MAX(created_at) AS fim,
+              (ARRAY_AGG(content ORDER BY created_at) FILTER (WHERE role = 'user'))[1] AS primeira
+       FROM playground_mensagens
+       GROUP BY session_id, client_slug
+       ORDER BY MAX(created_at) DESC
+       LIMIT $1`,
+      [parseInt(req.query.limit) || 30]
+    );
+    res.json({ sessions: r.rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Transcrição completa de uma conversa de teste, com o que o RAG devolveu turno
+// a turno.
+app.get("/admin/playground/sessions/:sessionId", async (req, res) => {
+  try {
+    const r = await db.query(
+      `SELECT role, content, rag_usado, tags, created_at
+       FROM playground_mensagens WHERE session_id = $1 ORDER BY created_at ASC`,
+      [req.params.sessionId]
+    );
+    res.json({ session_id: req.params.sessionId, mensagens: r.rows });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
