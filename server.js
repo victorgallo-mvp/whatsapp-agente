@@ -297,22 +297,67 @@ async function gerarEmbedding(texto) {
 // coloquial) com margem seguindo abaixo do que aparece pra pergunta fora do
 // escopo da base. Reajustar se a base crescer muito ou mudar de embedding model
 // — vale reauditar com /admin/knowledge/search?minSim=0 de tempos em tempos.
-// Monta a query de busca juntando as últimas mensagens do cliente com a atual.
-// Sem isso, pergunta de continuação com pronome ("qual a potência DELA?") não
-// tem nenhum termo pesquisável e o RAG volta vazio, mesmo com a resposta
-// indexada — o modelo/assunto ficou na mensagem anterior. Só mensagens do
-// cliente entram: incluir as respostas da IA enviesaria a busca pro que ela
-// já disse, em vez do que o cliente quer saber.
-function montarQueryRAG(historico, mensagemAtual, janela = 2) {
-  const anteriores = (historico || [])
-    .filter(m => m.role === "user")
-    .slice(-janela)
-    .map(m => m.content);
-  return [...anteriores, mensagemAtual].join(" ").slice(0, 1000);
-}
-
 function normalizarTexto(s) {
   return (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+}
+
+// Termos de escopo cadastrados no conhecimento do cliente (metadata.termos).
+// Cacheado porque muda pouco e seria uma consulta a cada mensagem recebida.
+const escopoTermosCache = new Map(); // clientId -> { termos, ts }
+const ESCOPO_TTL_MS = 10 * 60 * 1000;
+
+async function termosDeEscopo(clientId) {
+  const cache = escopoTermosCache.get(clientId);
+  if (cache && Date.now() - cache.ts < ESCOPO_TTL_MS) return cache.termos;
+  try {
+    const res = await db.query(
+      `SELECT DISTINCT jsonb_array_elements_text(metadata->'termos') AS termo
+       FROM knowledge_base
+       WHERE client_id = $1 AND metadata ? 'termos'`,
+      [clientId]
+    );
+    // Mais longo primeiro: numa conversa que citou "250 rxi-r", queremos casar
+    // com ele e não com o "250 rxi" que está contido dentro dele.
+    const termos = res.rows.map(r => r.termo).sort((a, b) => b.length - a.length);
+    escopoTermosCache.set(clientId, { termos, ts: Date.now() });
+    return termos;
+  } catch (err) {
+    console.error("[RAG] Erro ao carregar termos de escopo:", err.message);
+    return [];
+  }
+}
+
+// Qual produto a conversa está tratando. Varre o histórico do mais recente pro
+// mais antigo, então trocar de assunto no meio da conversa funciona: passa a
+// valer o último citado.
+function assuntoDaConversa(historico, termos) {
+  if (!termos || termos.length === 0) return null;
+  const doCliente = (historico || []).filter(m => m.role === "user");
+  for (let i = doCliente.length - 1; i >= 0; i--) {
+    const texto = normalizarTexto(doCliente[i].content);
+    const achado = termos.find(t => texto.includes(normalizarTexto(t)));
+    if (achado) return achado;
+  }
+  return null;
+}
+
+// Monta a query de busca a partir das últimas mensagens DO CLIENTE (o histórico
+// recebido já inclui a mensagem atual). Só mensagens do cliente entram: incluir
+// as respostas da IA enviesaria a busca pro que ela já disse.
+//
+// O "assunto" é o que conserta conversa longa. Sem ele, o nome do modelo saía da
+// janela depois de duas ou três trocas e o filtro de escopo — corretamente —
+// descartava a ficha, porque a pergunta não citava produto nenhum. Resultado: a
+// IA dizia "confirmo e retorno" sobre dado que estava indexado. Com o assunto
+// grudado na query, a conversa continua sabendo do que se trata.
+function montarQueryRAG(historico, janela = 3, assunto = null) {
+  const base = (historico || [])
+    .filter(m => m.role === "user")
+    .slice(-janela)
+    .map(m => m.content)
+    .join(" ");
+  const precisaAssunto = assunto && !normalizarTexto(base).includes(normalizarTexto(assunto));
+  return (precisaAssunto ? assunto + " " + base : base).slice(0, 1000);
 }
 
 // Barreira contra contaminação entre modelos. Busca por similaridade não sabe
@@ -596,8 +641,13 @@ async function processarMensagensPendentes(userId) {
     const KEYWORDS_AGENDA = ["visita", "horário", "horario", "agendar", "disponível", "disponivel", "agenda", "data"];
     const ehAgendamento   = KEYWORDS_AGENDA.some(k => mensagemAtual.toLowerCase().includes(k));
 
+    // getHistory já traz a mensagem atual (foi gravada logo acima), então a
+    // query sai daqui direto — antes ela era concatenada de novo, duplicando a
+    // mensagem e deixando só UMA anterior de contexto real.
     const historico = await getHistory(userId);
-    const queryText = montarQueryRAG(historico, mensagemAtual);
+    const assunto   = assuntoDaConversa(historico, await termosDeEscopo(CLIENT_ID));
+    const queryText = montarQueryRAG(historico, 3, assunto);
+    if (assunto) console.log("[RAG] assunto da conversa:", assunto);
 
     const [lead, knowledge, slots] = await Promise.all([
       getLead(userId),
@@ -1812,11 +1862,13 @@ app.post("/admin/playground/chat", async (req, res) => {
 
   if (!playgroundSessions.has(sessionId)) playgroundSessions.set(sessionId, []);
   const history = playgroundSessions.get(sessionId);
-  // monta a query ANTES de empilhar a mensagem atual, pra não duplicá-la
-  const queryRAG = montarQueryRAG(history, message);
   history.push({ role: "user", content: message });
 
   try {
+    // Mesmo caminho da produção: histórico já com a mensagem atual, e o assunto
+    // da conversa grudado na query pra não perder o modelo em conversa longa.
+    const assunto  = assuntoDaConversa(history, await termosDeEscopo(clientSlug));
+    const queryRAG = montarQueryRAG(history, 3, assunto);
     const knowledge = await buscarConhecimento(queryRAG, 4, 0.35, clientSlug);
 
     const d      = dataAtualStr();
