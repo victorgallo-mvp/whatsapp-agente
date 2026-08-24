@@ -181,7 +181,25 @@
         addRow("assistant", "[erro] " + data.error);
         return;
       }
+      // Sessão pausada: em produção a IA fica muda e o humano assume. Mostrar
+      // isso evita testar achando que ela responderia, quando não responderia.
+      if (data.pausado) {
+        const aviso = document.createElement("div");
+        aviso.className = "loading";
+        aviso.style.cssText = "background:#3a2a1a;color:#ffb877;padding:9px 12px;border-radius:8px;align-self:center;max-width:92%;text-align:center";
+        aviso.textContent = data.aviso;
+        messagesEl.appendChild(aviso);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+        return;
+      }
       addRow("assistant", data.reply, data.tagsDetectadas);
+      if (data.pausouAgora) {
+        const aviso = document.createElement("div");
+        aviso.className = "loading";
+        aviso.style.cssText = "background:#3a2a1a;color:#ffb877;padding:9px 12px;border-radius:8px;align-self:center;max-width:92%;text-align:center";
+        aviso.textContent = "A partir daqui a IA fica desativada e o atendente humano assume a conversa.";
+        messagesEl.appendChild(aviso);
+      }
       renderDebug(data.knowledgeUsado);
     } catch (e) {
       loadingRow.remove();

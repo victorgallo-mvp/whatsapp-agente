@@ -2013,6 +2013,13 @@ const TAGS_GATILHO = ["LEAD_CAPTURADO", "VISITA_SOLICITADA", "ARTE_APROVADA", "A
                        "ORCAMENTO_APROVADO", "VISITA_REAGENDADA", "VISITA_CANCELADA", "PRECISA_SUPORTE",
                        "TRANSFERIR_ATENDENTE", "CONSULTAR_TIME"];
 
+// Tags que desativam a IA em produção. O playground precisa simular isso, senão
+// dá falsa impressão nos fluxos de passagem: numa sessão de teste a IA disparou
+// PRECISA_SUPORTE e continuou respondendo normalmente, o que em atendimento real
+// não aconteceria — ela ficaria muda esperando o humano.
+const TAGS_QUE_PAUSAM = ["PRECISA_SUPORTE", "TRANSFERIR_ATENDENTE", "CONSULTAR_TIME"];
+const playgroundPausados = new Set(); // sessionId que já bateu numa tag de pausa
+
 app.get("/admin/playground/clients", (req, res) => {
   const fs = require("fs");
   const arquivos = fs.readdirSync(path.join(__dirname, "clients"))
@@ -2025,7 +2032,7 @@ app.get("/admin/playground/clients", (req, res) => {
 // gravado: a conversa anterior continua consultável pra análise depois.
 app.post("/admin/playground/reset", (req, res) => {
   const { sessionId } = req.body;
-  if (sessionId) playgroundSessions.delete(sessionId);
+  if (sessionId) { playgroundSessions.delete(sessionId); playgroundPausados.delete(sessionId); }
   res.json({ ok: true, novaSessao: require("crypto").randomUUID() });
 });
 
@@ -2061,6 +2068,19 @@ app.post("/admin/playground/chat", async (req, res) => {
   }
   const history = playgroundSessions.get(sessionId);
   history.push({ role: "user", content: message });
+
+  if (playgroundPausados.has(sessionId)) {
+    db.query(
+      `INSERT INTO playground_mensagens (session_id, client_slug, role, content) VALUES ($1, $2, 'user', $3)`,
+      [sessionId, clientSlug, message]
+    ).catch(() => {});
+    return res.json({
+      reply: "",
+      pausado: true,
+      aviso: "A IA está desativada nesta conversa — em atendimento real quem responde daqui em diante é o atendente humano. Use Reiniciar para simular um atendimento novo.",
+      tagsDetectadas: [], knowledgeUsado: [],
+    });
+  }
 
   try {
     // Mesmo caminho da produção: histórico já com a mensagem atual, e o assunto
@@ -2103,7 +2123,10 @@ app.post("/admin/playground/chat", async (req, res) => {
       [sessionId, clientSlug, message, reply, JSON.stringify(ragUsado), JSON.stringify(tagsDetectadas)]
     ).catch(err => console.error("[PLAYGROUND] Falha ao gravar conversa:", err.message));
 
-    res.json({ reply: replyLimpo, tagsDetectadas, knowledgeUsado: ragUsado });
+    const pausou = tagsDetectadas.some(t => TAGS_QUE_PAUSAM.includes(t));
+    if (pausou) playgroundPausados.add(sessionId);
+
+    res.json({ reply: replyLimpo, tagsDetectadas, knowledgeUsado: ragUsado, pausouAgora: pausou });
   } catch (err) {
     console.error("[PLAYGROUND] Erro:", err.response?.data || err.message);
     res.status(500).json({ error: err.message });
