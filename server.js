@@ -1923,6 +1923,30 @@ app.post("/admin/knowledge", async (req, res) => {
 // o que seria recuperado para uma mensagem qualquer — sem precisar simular
 // uma conversa inteira no WhatsApp. Útil pra checar cobertura e detectar
 // buracos no conhecimento (query sem nenhum resultado acima do threshold).
+// Força o resumo de um lead agora, sem esperar o gatilho de interações nem
+// mandar mensagem pra pessoa. Serve pra conferir a mesclagem do perfil depois de
+// mexer no extrator, e pra atualizar um lead na mão antes de um atendente
+// assumir a conversa.
+app.post("/admin/leads/:phone/resumir", async (req, res) => {
+  const phone = sanitizePhone(req.params.phone);
+  try {
+    const antes = await db.query(`SELECT profile FROM leads WHERE phone = $1`, [phone]);
+    if (!antes.rows[0]) return res.status(404).json({ error: "lead não encontrado" });
+
+    await atualizarPerfilLead(phone);
+
+    const depois = await db.query(`SELECT profile, last_summary FROM leads WHERE phone = $1`, [phone]);
+    res.json({
+      phone,
+      antes:  antes.rows[0].profile,
+      depois: depois.rows[0].profile,
+      resumo: depois.rows[0].last_summary,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get("/admin/knowledge/search", async (req, res) => {
   const q = req.query.q;
   if (!q) return res.status(400).json({ error: "query param 'q' obrigatorio" });
