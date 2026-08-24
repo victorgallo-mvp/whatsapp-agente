@@ -98,6 +98,9 @@ async function initDb() {
   await db.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS arte_url TEXT`);
   await db.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS arte_raw_msg JSONB`);
   await db.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS olivia_ativa BOOLEAN DEFAULT TRUE`);
+  // Em qual contagem de interação o resumo foi feito pela última vez — é o que
+  // permite refazer a cada N mensagens, e não só a cada 24h.
+  await db.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS resumo_ate_interacao INT DEFAULT 0`);
 
   // Migra dados existentes da tabela clientes
   await db.query(`
@@ -471,8 +474,21 @@ async function atualizarPerfilLead(phone) {
     const res = await chamarClaude({
       model:      "claude-haiku-4-5-20251001",
       max_tokens: 400,
-      system:     "Você é um analista de leads de uma empresa de impressão e comunicação visual. Extraia informações estruturadas em JSON com base na conversa.",
-      messages:   [{ role: "user", content: `Analise a conversa e extraia as informações em JSON:\n{\n  "interesse_principal": "...",\n  "produto_interesse": "...",\n  "orcamento_estimado": "...",\n  "objecoes": "...",\n  "resumo": "..."\n}\n\nConversa:\n${conversa}` }],
+      system:     `Você analisa conversas de atendimento da ${EMPRESA} e extrai um registro estruturado em JSON. Seja literal: registre o que foi dito, não o que você supõe.`,
+      messages:   [{ role: "user", content: `Extraia da conversa, em JSON:
+{
+  "fatos": "dados objetivos que o cliente informou ou que foram confirmados: nome, produto de interesse, cidade, valores citados, datas. Só o que está escrito na conversa.",
+  "compromissos": "o que a atendente afirmou ou prometeu ao cliente: preços informados, prazos, especificações passadas, encaminhamentos. Isso existe para ela não se contradizer depois.",
+  "pendencias": "o que ficou em aberto e precisa de retorno",
+  "inferencias": "leitura de intenção ou perfil. Isto é hipótese, não fato — marque como tal e não invente sinal que a conversa não dá.",
+  "produto_interesse": "produto ou plano específico, se houver",
+  "resumo": "duas ou três frases, orientado a decisão e pendência, não narrativo"
+}
+
+Não escreva "o cliente disse X e a atendente respondeu Y". Registre o estado atual: o que se sabe, o que foi prometido, o que falta.
+
+Conversa:
+${conversa}` }],
     });
     const texto     = res.data.content?.[0]?.text || "";
     const jsonMatch = texto.match(/\{[\s\S]*\}/);
@@ -480,7 +496,9 @@ async function atualizarPerfilLead(phone) {
       const jsonLimpo = jsonMatch[0].replace(/[\r\n]+/g, " ").replace(/,\s*}/g, "}");
       const perfil = JSON.parse(jsonLimpo);
       await db.query(
-        `UPDATE leads SET profile = profile || $2, last_summary = $3, profile_updated_at = NOW() WHERE phone = $1`,
+        `UPDATE leads SET profile = profile || $2, last_summary = $3,
+                profile_updated_at = NOW(), resumo_ate_interacao = total_interactions
+         WHERE phone = $1`,
         [phone, JSON.stringify(perfil), perfil.resumo || null]
       );
       console.log("[BRAIN] Perfil atualizado para:", phone);
@@ -490,18 +508,27 @@ async function atualizarPerfilLead(phone) {
   }
 }
 
+// A cada quantas interações o resumo é refeito. O gatilho era só de 24h, o que
+// tornava o resumo inútil DENTRO de uma conversa: quem falava 30 mensagens
+// seguidas nunca via o resumo atualizar, e o que saía da janela de histórico se
+// perdia de vez. Agora conta interação também.
+const INTERACOES_POR_RESUMO = 8;
+
 async function verificarAtualizacaoPerfil(phone) {
   try {
     const res = await db.query(
-      `SELECT profile_updated_at, total_interactions FROM leads WHERE phone = $1`,
+      `SELECT profile_updated_at, total_interactions, resumo_ate_interacao FROM leads WHERE phone = $1`,
       [phone]
     );
     if (!res.rows[0]) return;
-    const { profile_updated_at, total_interactions } = res.rows[0];
+    const { profile_updated_at, total_interactions, resumo_ate_interacao } = res.rows[0];
     if (total_interactions < 3) return;
-    const ultimaAtt        = profile_updated_at ? new Date(profile_updated_at).getTime() : 0;
-    const VINTE_QUATRO_H   = 24 * 60 * 60 * 1000;
-    if (Date.now() - ultimaAtt >= VINTE_QUATRO_H) {
+
+    const desdeUltimoResumo = total_interactions - (resumo_ate_interacao || 0);
+    const ultimaAtt         = profile_updated_at ? new Date(profile_updated_at).getTime() : 0;
+    const VINTE_QUATRO_H    = 24 * 60 * 60 * 1000;
+
+    if (desdeUltimoResumo >= INTERACOES_POR_RESUMO || Date.now() - ultimaAtt >= VINTE_QUATRO_H) {
       atualizarPerfilLead(phone); // fire and forget
     }
   } catch (err) {
@@ -688,8 +715,8 @@ async function processarMensagensPendentes(userId) {
     const response = await chamarClaude({
       model:      "claude-sonnet-4-6",
       max_tokens: 1000,
-      system:     promptComData(),
-      messages:   mensagensComData(historico, lead, knowledge, slots),
+      system:     promptComData(AGENT_CONFIG.instructions, { lead, knowledge, slots }),
+      messages:   mensagensComData(historico),
     });
 
     let reply = response.data.content?.[0]?.text;
@@ -979,44 +1006,76 @@ function dataAtualStr() {
   return `${dias[agora.getDay()]}, ${agora.getDate()} de ${meses[agora.getMonth()]} de ${agora.getFullYear()}`;
 }
 
-function promptComData() {
-  const d = dataAtualStr();
-  return `DATA DE HOJE: ${d}. Nunca use datas anteriores a esta. Calcule sempre a partir desta data.\n\n` +
-         AGENT_CONFIG.instructions +
-         `\n\nLEMBRETE FINAL: hoje é ${d}. Qualquer data de visita deve ser calculada a partir daqui.`;
-}
+// Monta os blocos de contexto com tags XML. A separação estrutural importa: o
+// Claude usa cada bloco pelo que ele é, e antes tudo vinha num texto corrido
+// injetado como se fosse fala do cliente (role "user"), o que embaralhava
+// "verdade sobre o produto" com "o que o cliente disse".
+function blocosDeContexto({ lead = null, knowledge = [], slots = null } = {}) {
+  let ctx = "";
 
-function mensagensComData(history, lead = null, knowledge = [], slots = null) {
-  const d = dataAtualStr();
-  let ctx = `[Sistema] Hoje é ${d}.`;
-  if (lead) {
-    ctx += ` Cliente identificado — Nome: ${lead.nome || "desconhecido"} | Empresa: ${lead.empresa || "desconhecida"}`;
-    if (lead.endereco)     ctx += ` | Endereço: ${lead.endereco}`;
-    if (lead.stage)        ctx += ` | Etapa: ${lead.stage}`;
-    if (lead.last_summary) ctx += ` | Contexto da última conversa (pode estar desatualizado): ${lead.last_summary}`;
-    ctx += `. Use esses dados sem perguntar novamente. Se o cliente mencionar produto ou assunto diferente do contexto anterior, inicie novo atendimento normalmente. Confirme com o cliente e pergunte só o que estiver faltando.`;
-  }
   if (knowledge.length > 0) {
-    ctx += `\n\n[Conhecimento relevante]:\n`;
+    ctx += `\n\n<contexto_negocio>\n` +
+           `Fatos verificados sobre produto e serviço, vindos da base oficial. Trate como verdade. ` +
+           `O que não estiver aqui, você não sabe — não complete com suposição.\n`;
     knowledge.forEach(k => {
       ctx += `- ${k.content}`;
-      if (k.context) ctx += ` (${k.context})`;
+      if (k.context) ctx += ` (referência: ${k.context})`;
       ctx += "\n";
     });
+    ctx += `</contexto_negocio>`;
   }
+
+  if (lead) {
+    const p = lead.profile || {};
+    ctx += `\n\n<historico_cliente>\n` +
+           `Dados já conhecidos deste cliente. Use sem perguntar de novo.\n` +
+           `Nome: ${lead.nome || "desconhecido"}\n`;
+    if (lead.empresa)  ctx += `Empresa: ${lead.empresa}\n`;
+    if (lead.endereco) ctx += `Endereço: ${lead.endereco}\n`;
+    if (lead.stage)    ctx += `Etapa: ${lead.stage}\n`;
+    if (p.fatos)        ctx += `Fatos apurados: ${p.fatos}\n`;
+    if (p.compromissos) ctx += `Já foi dito ao cliente (mantenha coerência, não contradiga): ${p.compromissos}\n`;
+    if (p.pendencias)   ctx += `Em aberto: ${p.pendencias}\n`;
+    // Inferência entra marcada como hipótese de propósito: se virar "verdade",
+    // a IA cristaliza julgamento errado sobre a pessoa e age em cima disso.
+    if (p.inferencias)  ctx += `Leitura de perfil (HIPÓTESE, pode estar errada — nunca afirme ao cliente nem trate como fato): ${p.inferencias}\n`;
+    if (!p.fatos && lead.last_summary) ctx += `Resumo da conversa anterior: ${lead.last_summary}\n`;
+    ctx += `Se o cliente mencionar assunto diferente do anterior, atenda normalmente — não force o contexto antigo.\n` +
+           `</historico_cliente>`;
+  }
+
   if (slots && slots.length > 0) {
-    ctx += `\n\n[Horários disponíveis para reunião]:\n`;
+    ctx += `\n\n<agenda_disponivel>\n`;
     slots.forEach(s => { ctx += `- ${s.data}: ${s.horarios.join(", ")}\n`; });
-    ctx += `Ofereça esses horários ao cliente. O cliente pode sugerir qualquer horário com minutos dentro desses blocos (ex: 16h30 é aceito se 16h estiver disponível). Se o cliente sugerir horário fora de todos os blocos disponíveis, oriente a escolher dentro dos horários listados.`;
+    ctx += `Ofereça esses horários. O cliente pode sugerir horário com minutos dentro dos blocos (16h30 vale se 16h estiver livre). Fora dos blocos, oriente a escolher um dos listados.\n` +
+           `</agenda_disponivel>`;
   } else if (slots !== null && slots.length === 0) {
-    ctx += `\n\n[Horários disponíveis para reunião]: nenhum horário disponível nos próximos dias. Informe ao lead que a equipe vai entrar em contato para agendar.`;
+    ctx += `\n\n<agenda_disponivel>\nNenhum horário livre nos próximos dias. Informe que a equipe entra em contato para agendar.\n</agenda_disponivel>`;
   }
-  return [
-    { role: "user",      content: ctx },
-    { role: "assistant", content: `Entendido.` },
-    ...history,
-  ];
+
+  return ctx;
 }
+
+// O contexto agora vive no system, não num turno falso de usuário. As regras
+// críticas do cliente são repetidas no fim porque em conversa longa o modelo
+// afrouxa as instruções do começo — e as duas que mais falharam nos testes
+// (inventar spec e cotar a variante errada) são justamente as caras.
+function promptComData(instrucoes = AGENT_CONFIG.instructions, contexto = {}, regrasCriticas = AGENT_CONFIG.regrasCriticas) {
+  const d = dataAtualStr();
+  let prompt = `DATA DE HOJE: ${d}. Nunca use datas anteriores a esta. Calcule sempre a partir desta data.\n\n` +
+               instrucoes +
+               blocosDeContexto(contexto) +
+               `\n\n<lembretes>\nHoje é ${d}. Qualquer data deve ser calculada a partir daqui.`;
+  if (regrasCriticas) prompt += `\n${regrasCriticas}`;
+  prompt += `\n</lembretes>`;
+  return prompt;
+}
+
+// Só o diálogo. Contexto de negócio e de cliente saíram daqui de propósito.
+function mensagensComData(history) {
+  return [...(history || [])];
+}
+
 function formatarTelefoneWA(telefone) {
   const nums = (telefone || "").replace(/\D/g, "");
   return nums.startsWith("55") && nums.length >= 12 ? nums : "55" + nums;
@@ -1645,18 +1704,17 @@ app.post("/api/leads/iniciar", async (req, res) => {
 
     // Gera mensagem de abertura via Olivia
     const leadCtx = { nome: nomeClean, empresa: empresaClean };
-    const msgs = mensagensComData([], leadCtx, [], null);
-    msgs.push({
+    const msgs = [{
       role: "user",
-      content: `[FORMULÁRIO] Este cliente demonstrou interesse em: ${produtoClean || "comunicação visual"}. Inicie a conversa com uma mensagem de boas-vindas personalizada.`,
-    });
+      content: `[FORMULÁRIO] Este cliente demonstrou interesse em: ${produtoClean || "nossos serviços"}. Inicie a conversa com uma mensagem de boas-vindas personalizada.`,
+    }];
 
     let mensagemAbertura = null;
     try {
       const response = await chamarClaude({
         model:      "claude-sonnet-4-6",
         max_tokens: 300,
-        system:     promptComData(),
+        system:     promptComData(AGENT_CONFIG.instructions, { lead: leadCtx }),
         messages:   msgs,
       });
       mensagemAbertura = response.data.content?.[0]?.text?.trim() || null;
@@ -1907,16 +1965,12 @@ app.post("/admin/playground/chat", async (req, res) => {
     const queryRAG = montarQueryRAG(history, 3, assunto);
     const knowledge = await buscarConhecimento(queryRAG, 4, 0.35, clientSlug);
 
-    const d      = dataAtualStr();
-    const system = `DATA DE HOJE: ${d}. Nunca use datas anteriores a esta. Calcule sempre a partir desta data.\n\n` +
-                   clientConfig.instructions +
-                   `\n\nLEMBRETE FINAL: hoje é ${d}. Qualquer data de visita deve ser calculada a partir daqui.`;
-
+    // Mesmo caminho da produção, pra que o teste reflita o comportamento real.
     const response = await chamarClaude({
       model:      "claude-sonnet-4-6",
       max_tokens: 1000,
-      system,
-      messages:   mensagensComData(history, null, knowledge, null),
+      system:     promptComData(clientConfig.instructions, { knowledge }, clientConfig.regrasCriticas),
+      messages:   mensagensComData(history),
     });
 
     const reply = response.data.content?.[0]?.text || "";

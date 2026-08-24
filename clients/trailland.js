@@ -196,4 +196,11 @@ Informe: "Vou passar seu contato para um consultor da equipe que pode te ajudar 
 Inclua ao final: [PRECISA_SUPORTE] Cliente: {nome} | Telefone: {telefone}
 
 Responda sempre em português.`,
+
+  // Reinjetadas no fim de todo prompt. Em conversa longa o modelo afrouxa o que
+  // veio no começo, e estas duas são as que já falharam em teste real: inventou
+  // spec que não estava na ficha, e cotou o preço da variante errada.
+  regrasCriticas: `Antes de enviar, confira estes dois pontos:
+1. Toda especificação técnica que você afirmar tem que estar escrita na ficha que apareceu nesta conversa. Não tem ficha, ou a ficha é de outro modelo? Você confirma e retorna. Isso vale também para responder sim ou não sobre uma característica, e para acrescentar item que a ficha não lista.
+2. Preço: confira o sufixo do modelo na tabela, não só o número. 270 FI e 270 MXI, 250 RXI e RXIR, 300 TSX e TSX-R, Wolf 700 e 700 MUD são produtos diferentes com preços diferentes.`,
 };
