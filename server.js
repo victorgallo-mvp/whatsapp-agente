@@ -1405,12 +1405,12 @@ async function verificarGatilhos(reply, userId) {
 
   // ─── DÚVIDA QUE A IA NÃO RESPONDE ──────────────────────────────────────────
   // "Confirmo e te retorno" é um compromisso assumido com o cliente. Sem isso
-  // aqui, era promessa vazia: ninguém ficava sabendo e o retorno nunca vinha.
+  // aqui era promessa vazia: ninguém ficava sabendo e o retorno nunca vinha.
   //
-  // De propósito NÃO desativa a IA, ao contrário do handoff e do suporte: ela
-  // não sabe UMA coisa, e segue atendendo preço, outros modelos e a própria
-  // intenção de compra. Desligar por causa de uma dúvida pontual deixaria o
-  // cliente sem ninguém pro resto da conversa.
+  // Pausa a IA, como o handoff e o suporte. Se um humano precisa entrar pra
+  // responder, deixar a IA seguir falando recria o problema de duas vozes na
+  // mesma conversa — e nenhuma das duas sabe o que a outra respondeu ao cliente.
+  // Quem assume, conduz até o fim; reativação é manual pelo dashboard.
   if (reply.includes("[CONSULTAR_TIME]")) {
     const linha    = reply.match(/\[CONSULTAR_TIME\](.*)/)?.[1]?.trim() || "";
     const nome     = linha.match(/Cliente: ([^|]+)/)?.[1]?.trim()  || "Cliente";
@@ -1419,18 +1419,21 @@ async function verificarGatilhos(reply, userId) {
     const pergunta = linha.match(/Pergunta: ([^|]+)/)?.[1]?.trim() || "não especificada";
     const foneWA   = formatarTelefoneWA(telefone);
 
+    await db.query(`UPDATE leads SET olivia_ativa = FALSE WHERE phone = $1`, [userId]);
+
     await notificarResponsavel(
       `Cliente aguardando retorno — ${nome}`,
-      `A ${AGENTE} não tinha essa informação e prometeu retorno ao cliente. Alguém precisa responder.\n\n` +
+      `A ${AGENTE} não tinha essa informação e prometeu retorno ao cliente. Assuma a conversa.\n\n` +
       `Cliente: ${nome}\n` +
       `Telefone: ${telefone}\n` +
       `Modelo: ${modelo}\n` +
       `O que ele perguntou: ${pergunta}\n\n` +
       `Abrir conversa: https://wa.me/${foneWA}\n\n` +
-      `A ${AGENTE} continua atendendo normalmente o resto da conversa. Para responder por ela, ` +
-      `mande no WhatsApp do sistema: @${foneWA} sua resposta`
+      `A ${AGENTE} foi desativada nesse chat e o cliente está esperando. Responda direto pelo WhatsApp ` +
+      `ou pelo painel. Para reativar a ${AGENTE} depois, use o toggle no dashboard.`
     );
-    console.log("[CONSULTAR_TIME]", nome, "|", modelo, "|", pergunta);
+    broadcastSSE("leads_update", { phone: userId });
+    console.log("[CONSULTAR_TIME]", nome, "|", modelo, "|", pergunta, "| Olivia desativada para:", userId);
   }
 
   if (reply.includes("[VISITA_CANCELADA]")) {
