@@ -436,6 +436,16 @@ function filtrarPorEscopo(rows, queryText) {
   if (descartados.length) {
     console.log("[RAG] descartado por escopo:", descartados.join(", "));
   }
+  // Sinal de alerta: a busca por similaridade achou candidatos, e o filtro
+  // derrubou TODOS. Ou o cliente perguntou de produto que não temos ficha
+  // (esperado), ou ele escreveu o nome de um jeito que a gente não previu —
+  // que foi a causa dos três últimos bugs de "confirmo e retorno" sobre dado
+  // indexado. Logar isso é o que troca "esperar o cliente reportar" por
+  // "aparece no log". Vale varrer periodicamente atrás de formas novas.
+  if (rows.length > 0 && mantidos.length === 0) {
+    console.warn("[RAG][ESCOPO-ZERO] nenhum resultado sobreviveu. query:", queryText.slice(0, 120),
+                 "| candidatos descartados:", descartados.join(", "));
+  }
   return mantidos;
 }
 
@@ -488,9 +498,27 @@ async function atualizarPerfilLead(phone) {
     const history = await getHistory(phone);
     if (history.length < 3) return;
     const conversa = history.map(m => m.role + ": " + m.content).join("\n");
+
+    // O que já se sabia deste cliente. Sem isso a memória de longo prazo era uma
+    // ilusão: o operador || do JSONB SUBSTITUI a chave, então cada resumo novo
+    // apagava o anterior. Quem contou na segunda-feira que mora em Contagem
+    // sumia do registro na quarta. Agora o resumidor recebe o registro atual e
+    // mescla, em vez de sobrescrever às cegas.
+    const anterior = await db.query(`SELECT profile FROM leads WHERE phone = $1`, [phone]);
+    const perfilAtual = anterior.rows[0]?.profile || {};
+    const temHistorico = Object.keys(perfilAtual).length > 0;
+    const blocoAnterior = temHistorico
+      ? `\n\nREGISTRO ATUAL DESTE CLIENTE (de conversas anteriores):\n${JSON.stringify(perfilAtual, null, 2)}\n\n` +
+        `Atualize esse registro com o que a conversa abaixo acrescenta. Regras da mesclagem:\n` +
+        `- Carregue adiante o que continua valendo, mesmo que a conversa nova não repita.\n` +
+        `- Corrija o que a conversa nova contradiz — o mais recente vence.\n` +
+        `- Remova de pendencias o que já foi resolvido.\n` +
+        `- Não duplique o mesmo fato escrito de outro jeito.`
+      : "";
+
     const res = await chamarClaude({
       model:      "claude-haiku-4-5-20251001",
-      max_tokens: 400,
+      max_tokens: 700,
       system:     `Você analisa conversas de atendimento da ${EMPRESA} e extrai um registro estruturado em JSON. Seja literal: registre o que foi dito, não o que você supõe.`,
       messages:   [{ role: "user", content: `Extraia da conversa, em JSON:
 {
@@ -502,7 +530,7 @@ async function atualizarPerfilLead(phone) {
   "resumo": "duas ou três frases, orientado a decisão e pendência, não narrativo"
 }
 
-Não escreva "o cliente disse X e a atendente respondeu Y". Registre o estado atual: o que se sabe, o que foi prometido, o que falta.
+Não escreva "o cliente disse X e a atendente respondeu Y". Registre o estado atual: o que se sabe, o que foi prometido, o que falta.${blocoAnterior}
 
 Conversa:
 ${conversa}` }],
