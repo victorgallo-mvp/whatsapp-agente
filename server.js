@@ -322,6 +322,21 @@ function normalizarTexto(s) {
   return (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 }
 
+// Cliente escreve como fala, não como a gente catalogou: quem procura a 270 FI
+// digita "270 fi" ou "fi 270" com a mesma naturalidade. Sem aceitar a ordem
+// invertida, "queria saber da fi 270" não casava com nenhum termo, o filtro
+// descartava a ficha e a IA respondia "confirmo e retorno" sobre dado indexado.
+// Só inverte termo de duas palavras — é onde a troca acontece na prática.
+function formasDoTermo(termo) {
+  const t = normalizarTexto(termo).trim();
+  const partes = t.split(/\s+/).filter(Boolean);
+  return partes.length === 2 ? [t, `${partes[1]} ${partes[0]}`] : [t];
+}
+
+function textoMencionaTermo(textoNormalizado, termo) {
+  return formasDoTermo(termo).some(f => textoNormalizado.includes(f));
+}
+
 // Termos de escopo cadastrados no conhecimento do cliente (metadata.termos).
 // Cacheado porque muda pouco e seria uma consulta a cada mensagem recebida.
 const escopoTermosCache = new Map(); // clientId -> { termos, ts }
@@ -356,7 +371,7 @@ function assuntoDaConversa(historico, termos) {
   const doCliente = (historico || []).filter(m => m.role === "user");
   for (let i = doCliente.length - 1; i >= 0; i--) {
     const texto = normalizarTexto(doCliente[i].content);
-    const achado = termos.find(t => texto.includes(normalizarTexto(t)));
+    const achado = termos.find(t => textoMencionaTermo(texto, t));
     if (achado) return achado;
   }
   return null;
@@ -411,9 +426,11 @@ function filtrarPorEscopo(rows, queryText) {
     let alvo = q;
     const excluir = r.metadata?.excluir;
     if (Array.isArray(excluir)) {
-      for (const t of excluir) alvo = alvo.split(normalizarTexto(t)).join(" ");
+      for (const t of excluir) {
+        for (const forma of formasDoTermo(t)) alvo = alvo.split(forma).join(" ");
+      }
     }
-    if (termos.some(t => alvo.includes(normalizarTexto(t)))) mantidos.push(r);
+    if (termos.some(t => textoMencionaTermo(alvo, t))) mantidos.push(r);
     else descartados.push(r.metadata?.escopo || termos[0]);
   }
   if (descartados.length) {
