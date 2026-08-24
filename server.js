@@ -780,6 +780,7 @@ async function processarMensagensPendentes(userId) {
       .replace(/\[VISITA_CANCELADA\].*/g, "")
       .replace(/\[PRECISA_SUPORTE\].*/g, "")
       .replace(/\[TRANSFERIR_ATENDENTE\].*/g, "")
+      .replace(/\[CONSULTAR_TIME\].*/g, "")
       .trim();
 
     if (!conflito) {
@@ -1402,6 +1403,36 @@ async function verificarGatilhos(reply, userId) {
     console.log("[TRANSFERIR_ATENDENTE]", nome, "|", produto, "| Olivia desativada para:", userId);
   }
 
+  // ─── DÚVIDA QUE A IA NÃO RESPONDE ──────────────────────────────────────────
+  // "Confirmo e te retorno" é um compromisso assumido com o cliente. Sem isso
+  // aqui, era promessa vazia: ninguém ficava sabendo e o retorno nunca vinha.
+  //
+  // De propósito NÃO desativa a IA, ao contrário do handoff e do suporte: ela
+  // não sabe UMA coisa, e segue atendendo preço, outros modelos e a própria
+  // intenção de compra. Desligar por causa de uma dúvida pontual deixaria o
+  // cliente sem ninguém pro resto da conversa.
+  if (reply.includes("[CONSULTAR_TIME]")) {
+    const linha    = reply.match(/\[CONSULTAR_TIME\](.*)/)?.[1]?.trim() || "";
+    const nome     = linha.match(/Cliente: ([^|]+)/)?.[1]?.trim()  || "Cliente";
+    const telefone = linha.match(/Telefone: ([^|]+)/)?.[1]?.trim() || userId;
+    const modelo   = linha.match(/Modelo: ([^|]+)/)?.[1]?.trim()   || "não informado";
+    const pergunta = linha.match(/Pergunta: ([^|]+)/)?.[1]?.trim() || "não especificada";
+    const foneWA   = formatarTelefoneWA(telefone);
+
+    await notificarResponsavel(
+      `Cliente aguardando retorno — ${nome}`,
+      `A ${AGENTE} não tinha essa informação e prometeu retorno ao cliente. Alguém precisa responder.\n\n` +
+      `Cliente: ${nome}\n` +
+      `Telefone: ${telefone}\n` +
+      `Modelo: ${modelo}\n` +
+      `O que ele perguntou: ${pergunta}\n\n` +
+      `Abrir conversa: https://wa.me/${foneWA}\n\n` +
+      `A ${AGENTE} continua atendendo normalmente o resto da conversa. Para responder por ela, ` +
+      `mande no WhatsApp do sistema: @${foneWA} sua resposta`
+    );
+    console.log("[CONSULTAR_TIME]", nome, "|", modelo, "|", pergunta);
+  }
+
   if (reply.includes("[VISITA_CANCELADA]")) {
     const linha    = reply.match(/\[VISITA_CANCELADA\](.*)/)?.[1]?.trim() || "";
     const nome     = linha.match(/Nome: ([^|]+)/)?.[1]?.trim()     || "Cliente";
@@ -1778,6 +1809,7 @@ app.post("/api/leads/iniciar", async (req, res) => {
       .replace(/\[VISITA_SOLICITADA\].*/g, "")
       .replace(/\[PRECISA_SUPORTE\].*/g, "")
       .replace(/\[TRANSFERIR_ATENDENTE\].*/g, "")
+      .replace(/\[CONSULTAR_TIME\].*/g, "")
       .trim();
 
     await sendZAPIMessage(phoneClean, mensagemLimpa);
@@ -1976,7 +2008,7 @@ app.get("/admin/knowledge/search", async (req, res) => {
 const playgroundSessions = new Map(); // sessionId -> [{ role, content }]
 const TAGS_GATILHO = ["LEAD_CAPTURADO", "VISITA_SOLICITADA", "ARTE_APROVADA", "ARTE_REVISAO",
                        "ORCAMENTO_APROVADO", "VISITA_REAGENDADA", "VISITA_CANCELADA", "PRECISA_SUPORTE",
-                       "TRANSFERIR_ATENDENTE"];
+                       "TRANSFERIR_ATENDENTE", "CONSULTAR_TIME"];
 
 app.get("/admin/playground/clients", (req, res) => {
   const fs = require("fs");
