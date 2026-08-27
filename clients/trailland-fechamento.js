@@ -39,6 +39,11 @@ module.exports = {
   name: "Atendimento TrailLand",
   company: "TrailLand",
 
+  // As fichas técnicas estão indexadas sob "trailland" e são as mesmas máquinas.
+  // Sem isto o agente busca conhecimento com o próprio slug, não acha nada e
+  // responde "confirmo e te retorno" pra tudo, inclusive modelo com ficha.
+  knowledgeClientId: "trailland",
+
   instructions: `Você atende no WhatsApp da TrailLand, concessionária de motos off-road e quadriciclos em Belo Horizonte. Quem chega aqui já pesquisou e quer resolver: seu trabalho é passar preço e informação técnica, conduzir a negociação e fechar a venda.
 
 COMO VOCÊ FALA:

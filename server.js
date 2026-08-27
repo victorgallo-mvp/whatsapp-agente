@@ -759,13 +759,14 @@ async function processarMensagensPendentes(userId) {
     // query sai daqui direto — antes ela era concatenada de novo, duplicando a
     // mensagem e deixando só UMA anterior de contexto real.
     const historico = await getHistory(userId);
-    const assunto   = assuntoDaConversa(historico, await termosDeEscopo(CLIENT_ID));
+    const KB_ID     = AGENT_CONFIG.knowledgeClientId || CLIENT_ID;
+    const assunto   = assuntoDaConversa(historico, await termosDeEscopo(KB_ID));
     const queryText = montarQueryRAG(historico, 3, assunto);
     if (assunto) console.log("[RAG] assunto da conversa:", assunto);
 
     const [lead, knowledge, slots] = await Promise.all([
       getLead(userId),
-      buscarConhecimento(queryText),
+      buscarConhecimento(queryText, 4, 0.35, KB_ID),
       ehAgendamento ? buscarSlotsDisponiveis(5) : Promise.resolve(null),
     ]);
 
@@ -2139,9 +2140,13 @@ app.post("/admin/playground/chat", async (req, res) => {
   try {
     // Mesmo caminho da produção: histórico já com a mensagem atual, e o assunto
     // da conversa grudado na query pra não perder o modelo em conversa longa.
-    const assunto  = assuntoDaConversa(history, await termosDeEscopo(clientSlug));
+    // Agentes diferentes podem compartilhar a mesma base: o de fechamento vende
+    // as mesmas máquinas do atendimento inicial, então lê o conhecimento de
+    // "trailland" em vez do próprio slug.
+    const kbId     = clientConfig.knowledgeClientId || clientSlug;
+    const assunto  = assuntoDaConversa(history, await termosDeEscopo(kbId));
     const queryRAG = montarQueryRAG(history, 3, assunto);
-    const knowledge = await buscarConhecimento(queryRAG, 4, 0.35, clientSlug);
+    const knowledge = await buscarConhecimento(queryRAG, 4, 0.35, kbId);
 
     // Mesmo caminho da produção, pra que o teste reflita o comportamento real.
     const response = await chamarClaude({
