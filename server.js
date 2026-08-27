@@ -2300,8 +2300,10 @@ app.get("/oauth2callback", async (req, res) => {
 // commit em que este processo subiu. Sem isso não dá pra saber se o deploy já
 // pegou uma correção: o endpoint de saúde responde igual na versão velha e na
 // nova, e eu já testei código antigo achando que era o novo mais de uma vez.
-const BUILD = require("child_process").execSync("git rev-parse --short HEAD 2>/dev/null || echo desconhecido")
-  .toString().trim();
+const BUILD = (process.env.RAILWAY_GIT_COMMIT_SHA || "").slice(0, 7) || (() => {
+  try { return require("child_process").execSync("git rev-parse --short HEAD").toString().trim(); }
+  catch { return "desconhecido"; }
+})();
 
 app.get("/", (req, res) => res.json({
   build: BUILD,
