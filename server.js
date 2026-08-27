@@ -334,6 +334,31 @@ function conferirPrecos(texto, instrucoes) {
   return [...new Set(citados.filter(v => v.length >= 4 && !daTabela.has(v)))];
 }
 
+// Gera a resposta e, se aparecer valor em R$ que não existe na tabela, tenta de
+// novo uma vez. Validar preço DENTRO do modelo não funciona: quando eu mandei
+// ela "conferir o valor antes de mandar", a conferência saiu no texto pro
+// cliente, em inglês ("Wait, let me re-check the price"). O único lugar onde
+// essa checagem funciona é aqui fora, depois da resposta pronta.
+async function gerarRespostaValidada(payload, instrucoes) {
+  let resposta = await chamarClaude(payload);
+  let texto    = resposta.data.content?.[0]?.text || "";
+
+  const suspeitos = conferirPrecos(texto, instrucoes);
+  if (suspeitos.length) {
+    console.warn("[PRECO][SUSPEITO] regenerando. valores fora da tabela:", suspeitos.join(", "));
+    const segunda = await chamarClaude(payload);
+    const texto2  = segunda.data.content?.[0]?.text || "";
+    const ainda   = conferirPrecos(texto2, instrucoes);
+    if (ainda.length) {
+      console.error("[PRECO][PERSISTE] segunda tentativa também citou valor fora da tabela:", ainda.join(", "));
+    }
+    // fica com a segunda se ela estiver limpa; senão devolve a primeira mesmo,
+    // já logada, em vez de deixar o cliente sem resposta
+    if (!ainda.length) { resposta = segunda; texto = texto2; }
+  }
+  return { resposta, texto, suspeitos };
+}
+
 function normalizarTexto(s) {
   return (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 }
@@ -782,14 +807,13 @@ async function processarMensagensPendentes(userId) {
       console.log("[CALENDAR] Slots injetados:", slots.map(s => s.data + " " + s.horarios.join("/")).join(" | "));
     }
 
-    const response = await chamarClaude({
+    const sistema = promptComData(AGENT_CONFIG.instructions, { lead, knowledge, slots });
+    const { texto: reply } = await gerarRespostaValidada({
       model:      "claude-sonnet-4-6",
       max_tokens: 1000,
-      system:     promptComData(AGENT_CONFIG.instructions, { lead, knowledge, slots }),
+      system:     sistema,
       messages:   mensagensComData(historico),
-    });
-
-    let reply = response.data.content?.[0]?.text;
+    }, sistema);
     if (!reply) return;
 
     await addToHistory(userId, "assistant", reply);
@@ -2149,12 +2173,13 @@ app.post("/admin/playground/chat", async (req, res) => {
     const knowledge = await buscarConhecimento(queryRAG, 4, 0.35, kbId);
 
     // Mesmo caminho da produção, pra que o teste reflita o comportamento real.
-    const response = await chamarClaude({
+    const sistema = promptComData(clientConfig.instructions, { knowledge }, clientConfig.regrasCriticas);
+    const response = (await gerarRespostaValidada({
       model:      "claude-sonnet-4-6",
       max_tokens: 1000,
-      system:     promptComData(clientConfig.instructions, { knowledge }, clientConfig.regrasCriticas),
+      system:     sistema,
       messages:   mensagensComData(history),
-    });
+    }, sistema)).resposta;
 
     const reply = (response.data.content?.[0]?.text || "").trim();
 
