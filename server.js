@@ -382,11 +382,19 @@ async function termosDeEscopo(clientId) {
 // Qual produto a conversa está tratando. Varre o histórico do mais recente pro
 // mais antigo, então trocar de assunto no meio da conversa funciona: passa a
 // valer o último citado.
+// Varre a conversa INTEIRA, incluindo o que a IA disse. Quem citou o produto não
+// importa para saber do que se está falando: quando ela recomenda um modelo e o
+// cliente responde "por favor" ou "essa mesmo", o assunto é o modelo que ela
+// nomeou. Olhar só o cliente fazia a busca sair sem modelo justamente nesse
+// caso, e ela pedia pra confirmar spec de ficha que estava indexada.
+//
+// Isso é diferente do texto da query (montarQueryRAG), que segue usando só
+// mensagens do cliente: lá a fala da IA enviesaria a busca pro que ela já disse.
 function assuntoDaConversa(historico, termos) {
   if (!termos || termos.length === 0) return null;
-  const doCliente = (historico || []).filter(m => m.role === "user");
-  for (let i = doCliente.length - 1; i >= 0; i--) {
-    const texto = normalizarTexto(doCliente[i].content);
+  const msgs = historico || [];
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const texto = normalizarTexto(msgs[i].content);
     const achado = termos.find(t => textoMencionaTermo(texto, t));
     if (achado) return achado;
   }
