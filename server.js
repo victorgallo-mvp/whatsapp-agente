@@ -2297,7 +2297,14 @@ app.get("/oauth2callback", async (req, res) => {
 });
 
 // ─── HEALTH CHECK ─────────────────────────────────────────────────────────────
+// commit em que este processo subiu. Sem isso não dá pra saber se o deploy já
+// pegou uma correção: o endpoint de saúde responde igual na versão velha e na
+// nova, e eu já testei código antigo achando que era o novo mais de uma vez.
+const BUILD = require("child_process").execSync("git rev-parse --short HEAD 2>/dev/null || echo desconhecido")
+  .toString().trim();
+
 app.get("/", (req, res) => res.json({
+  build: BUILD,
   status: "ok",
   agent: AGENT_CONFIG.name,
   company: AGENT_CONFIG.company,
