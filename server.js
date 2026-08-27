@@ -7,7 +7,7 @@ const cron       = require("node-cron");
 const path       = require("path");
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: "25mb" })); // áudio em base64 estoura o padrão de 100kb
 app.use(express.static(path.join(__dirname, "public")));
 
 const ANTHROPIC_API_KEY  = process.env.ANTHROPIC_API_KEY;
@@ -216,16 +216,14 @@ async function salvarArteRaw(phone, rawMsg) {
   );
 }
 
-async function transcreverAudio(rawMsg) {
-  const { base64, mimetype } = await obterBase64Midia(rawMsg);
-  const buffer = Buffer.from(base64, "base64");
-
+// Núcleo da transcrição, separado do WhatsApp de propósito: o mesmo caminho
+// serve pro áudio que chega pela Evolution e pro endpoint de teste. Testar a
+// transcrição sem depender de mandar áudio por WhatsApp é o que permite validar
+// o pipeline antes de migrar de provedor.
+async function transcreverBuffer(buffer, mimetype = "audio/ogg", nomeArquivo = "audio.ogg") {
   const FormData = require("form-data");
   const form = new FormData();
-  form.append("file", buffer, {
-    filename: "audio.ogg",
-    contentType: mimetype || "audio/ogg",
-  });
+  form.append("file", buffer, { filename: nomeArquivo, contentType: mimetype });
   form.append("model", "whisper-large-v3");
   form.append("language", "pt");
   form.append("response_format", "text");
@@ -233,9 +231,14 @@ async function transcreverAudio(rawMsg) {
   const r = await axios.post(
     "https://api.groq.com/openai/v1/audio/transcriptions",
     form,
-    { headers: { ...form.getHeaders(), Authorization: `Bearer ${GROQ_API_KEY}` } }
+    { headers: { ...form.getHeaders(), Authorization: `Bearer ${GROQ_API_KEY}` }, maxBodyLength: Infinity }
   );
   return typeof r.data === "string" ? r.data.trim() : (r.data?.text || "").trim();
+}
+
+async function transcreverAudio(rawMsg) {
+  const { base64, mimetype } = await obterBase64Midia(rawMsg);
+  return transcreverBuffer(Buffer.from(base64, "base64"), mimetype || "audio/ogg");
 }
 
 async function obterBase64Midia(rawMsg) {
@@ -1979,6 +1982,22 @@ app.post("/admin/leads/:phone/resumir", async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Transcreve um áudio enviado em base64, pelo mesmo caminho que o áudio do
+// WhatsApp segue. Serve pra conferir a qualidade da transcrição com áudio real
+// antes de depender dela em produção, e pra estudar conversas exportadas.
+app.post("/admin/transcrever", async (req, res) => {
+  const { base64, mimetype, nome } = req.body;
+  if (!base64) return res.status(400).json({ error: "campo base64 obrigatorio" });
+  if (!GROQ_API_KEY) return res.status(503).json({ error: "GROQ_API_KEY nao configurado" });
+  try {
+    const inicio = Date.now();
+    const texto  = await transcreverBuffer(Buffer.from(base64, "base64"), mimetype || "audio/ogg", nome || "audio.ogg");
+    res.json({ texto, ms: Date.now() - inicio, caracteres: texto.length });
+  } catch (err) {
+    res.status(500).json({ error: err.response?.data?.error?.message || err.message });
   }
 });
 
