@@ -2143,7 +2143,25 @@ app.post("/admin/playground/chat", async (req, res) => {
       messages:   mensagensComData(history),
     });
 
-    const reply = response.data.content?.[0]?.text || "";
+    const reply = (response.data.content?.[0]?.text || "").trim();
+
+    // Resposta vazia acontece de vez em quando. Empilhar isso no histórico
+    // corrompe a conversa daí pra frente: a IA passa a "ver" um turno em branco
+    // dela mesma e perde o fio (num teste ela cotou a 270 FI e na mensagem
+    // seguinte perguntou de qual modelo o cliente falava). Produção já
+    // descartava; aqui não. Tira a mensagem do cliente do histórico também,
+    // pra ele poder repetir sem duplicar o turno.
+    if (!reply) {
+      history.pop();
+      console.warn("[PLAYGROUND] Claude devolveu resposta vazia. sessão:", sessionId);
+      return res.json({
+        reply: "",
+        vazia: true,
+        aviso: "O modelo devolveu resposta vazia. Manda a mensagem de novo — nada foi gravado nesse turno.",
+        tagsDetectadas: [], knowledgeUsado: [],
+      });
+    }
+
     history.push({ role: "assistant", content: reply });
 
     let replyLimpo = reply;
