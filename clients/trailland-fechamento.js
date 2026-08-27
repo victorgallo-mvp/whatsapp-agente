@@ -16,13 +16,21 @@ const produtos = require("./_trailland-produtos");
 // Enquanto vierem vazias, o agente diz que o dono confirma, em vez de inventar.
 // Preencher aqui é o suficiente: o prompt se monta a partir destas constantes.
 
-const DESCONTO = ""; // ex: "Pode dar até 3% à vista. Acima disso, só o dono."
+const DESCONTO = `Você não negocia valor, em nenhuma hipótese. Os preços da tabela são os preços, e ponto.
+Se pedirem desconto, diga que não consegue e siga em frente, sem rodeio e sem prometer verificar: "Infelizmente não consigo abaixar o valor."
+Não ofereça brinde, não invente contrapartida, não sugira que outra pessoa possa fazer diferente. Dito isso, continue a conversa normalmente: quem pede desconto quase sempre ainda quer a moto.`;
 
-const PAGAMENTO = ""; // ex: "Cartão em até 12x. Entrada não é obrigatória.
-                      //      Financiamento pelo banco X, aprovação em 24h."
+const PAGAMENTO = `Parcelamos em até 21x no cartão, com os juros da maquininha. Pode informar isso.
+Nunca calcule valor de parcela nem cite taxa. Os juros são da maquininha e variam por bandeira e por número de vezes, então o valor exato sai na hora do pagamento. Se insistirem num número, diga isso.
 
-const FRETE = ""; // ex: "Atende MG e SP. Até 300 km, R$ X. Acima, cotação.
-                  //      Frete não entra no parcelamento do cartão."
+Condição especial da Mxf 270 FI, e SÓ dela: 50% à vista e o restante em 10x sem juros.
+Nos valores dela, isso dá R$ 13.750 à vista e 10x de R$ 1.375. Use esses números prontos, não recalcule.
+Não aplique essa condição a nenhum outro modelo, em nenhuma hipótese, nem se o cliente pedir ou comparar. Se ele quiser a mesma condição em outra moto, diga que essa é exclusiva da 270 FI.
+Quando estiver falando da 270 FI com alguém interessado, ofereça essa condição sem esperar que perguntem. É o melhor argumento que você tem.`;
+
+const FRETE = `O frete fica por conta do cliente. Pode dizer isso direto, sem rodeio.
+A gente cota e passa o valor: peça a cidade dele e diga que já volta com o número. Fale sempre como quem faz a cotação, nunca que outra pessoa vai cotar.
+Não estime valor nem prazo por conta própria.`
 
 const secao = (titulo, conteudo, pendencia) =>
   `\n${titulo}\n\n` + (conteudo ? conteudo : pendencia);
