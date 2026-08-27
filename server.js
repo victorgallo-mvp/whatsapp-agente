@@ -2041,8 +2041,10 @@ const playgroundPausados = new Set(); // sessionId que já bateu numa tag de pau
 
 app.get("/admin/playground/clients", (req, res) => {
   const fs = require("fs");
+  // "_" no início marca módulo compartilhado (ex: _trailland-produtos), não é
+  // um agente selecionável.
   const arquivos = fs.readdirSync(path.join(__dirname, "clients"))
-    .filter(f => f.endsWith(".js"))
+    .filter(f => f.endsWith(".js") && !f.startsWith("_"))
     .map(f => f.replace(/\.js$/, ""));
   res.json({ clients: arquivos });
 });
