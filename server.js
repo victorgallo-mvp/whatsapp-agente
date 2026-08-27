@@ -321,6 +321,19 @@ async function gerarEmbedding(texto) {
 // coloquial) com margem seguindo abaixo do que aparece pra pergunta fora do
 // escopo da base. Reajustar se a base crescer muito ou mudar de embedding model
 // — vale reauditar com /admin/knowledge/search?minSim=0 de tempos em tempos.
+// Confere se todo valor em R$ que a IA citou existe de fato na tabela do prompt.
+// Alucinação de dígito em preço é o erro mais caro deste sistema: num teste a IA
+// cotou R$ 27.490 numa moto de R$ 17.490, dez mil reais de diferença, sem nada
+// no sistema percebendo. Aqui não bloqueia a resposta, mas deixa rastro no log e
+// aparece no playground, que é o que permite pegar antes de virar rotina.
+function conferirPrecos(texto, instrucoes) {
+  const daTabela = new Set((instrucoes.match(/R\$ ?[\d.]+/g) || []).map(v => v.replace(/[^\d]/g, "")));
+  if (daTabela.size === 0) return [];
+  const citados = (texto.match(/R\$ ?[\d.]+/g) || []).map(v => v.replace(/[^\d]/g, ""));
+  // valores curtos são troco de conversa (ex: "R$ 50"), não cotação de máquina
+  return [...new Set(citados.filter(v => v.length >= 4 && !daTabela.has(v)))];
+}
+
 function normalizarTexto(s) {
   return (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 }
@@ -786,7 +799,19 @@ async function processarMensagensPendentes(userId) {
       .replace(/\[CONSULTAR_TIME\].*/g, "")
       .trim();
 
-    if (!conflito) {
+    // Resposta composta só de tag some inteira ao limpar os marcadores. Sem
+    // esta guarda mandaríamos mensagem vazia pro cliente, que no WhatsApp é
+    // silêncio no melhor caso e erro de envio no pior.
+    const precosSuspeitos = conferirPrecos(replyLimpo, AGENT_CONFIG.instructions);
+    if (precosSuspeitos.length) {
+      console.warn("[PRECO][SUSPEITO] valor citado que não está na tabela:",
+                   precosSuspeitos.map(v => "R$ " + v).join(", "), "| resposta:", replyLimpo.slice(0, 160));
+    }
+
+    if (!conflito && !replyLimpo) {
+      console.warn("[OLIVIA] Resposta ficou vazia após remover tags. Original:", reply.slice(0, 200));
+    }
+    if (!conflito && replyLimpo) {
       console.log("[OLIVIA RESPONDE] " + replyLimpo);
       await sendZAPIMessage(userId, replyLimpo);
       lastResponseTime[userId] = Date.now();
@@ -2147,7 +2172,10 @@ app.post("/admin/playground/chat", async (req, res) => {
     const pausou = tagsDetectadas.some(t => TAGS_QUE_PAUSAM.includes(t));
     if (pausou) playgroundPausados.add(sessionId);
 
-    res.json({ reply: replyLimpo, tagsDetectadas, knowledgeUsado: ragUsado, pausouAgora: pausou });
+    const precosSuspeitos = conferirPrecos(replyLimpo, clientConfig.instructions);
+    if (precosSuspeitos.length) console.warn("[PRECO][SUSPEITO]", precosSuspeitos, "|", replyLimpo.slice(0, 140));
+
+    res.json({ reply: replyLimpo, tagsDetectadas, knowledgeUsado: ragUsado, pausouAgora: pausou, precosSuspeitos });
   } catch (err) {
     console.error("[PLAYGROUND] Erro:", err.response?.data || err.message);
     res.status(500).json({ error: err.message });
