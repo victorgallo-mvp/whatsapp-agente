@@ -459,8 +459,22 @@ function montarQueryRAG(historico, janela = 3, assunto = null) {
 // Sem exclusão, perguntar da versão -R traria também a ficha da versão base, que
 // tem componentes e preço diferentes. Se a query casar com algo em excluir, a
 // entrada cai mesmo que um termo tenha batido.
+// Pergunta comparativa precisa das duas fichas por definição. Sem isto, o
+// mecanismo que separa variante base da versão -R trabalhava contra: cliente
+// perguntou "qual a diferença dela pra 300" depois de falar da 300 TSX-R, e a
+// ficha da 300 TSX foi descartada, porque "300" sozinho não é termo cadastrado
+// (não pode ser, colide com XWOLF 300). Falar do modelo só pelo número é o
+// normal do cliente, então na comparação a exclusão é suspensa.
+const MARCAS_COMPARACAO = ["diferenca", "diferencas", "diferente", "compar", "versus", " vs ",
+                            "melhor que", "entre a ", "entre o ", "qual das", "qual dos"];
+
+function ehComparacao(queryNormalizada) {
+  return MARCAS_COMPARACAO.some(m => queryNormalizada.includes(m));
+}
+
 function filtrarPorEscopo(rows, queryText) {
   const q = normalizarTexto(queryText);
+  const comparando = ehComparacao(q);
   const mantidos = [];
   const descartados = [];
   for (const r of rows) {
@@ -473,7 +487,7 @@ function filtrarPorEscopo(rows, queryText) {
     // e a rxi-r") o "250 rxi" que sobra ainda casa, e as duas fichas vêm, que é
     // o certo pra comparar. Descartar direto fazia a comparação perder a base.
     let alvo = q;
-    const excluir = r.metadata?.excluir;
+    const excluir = comparando ? null : r.metadata?.excluir;
     if (Array.isArray(excluir)) {
       for (const t of excluir) {
         for (const forma of formasDoTermo(t)) alvo = alvo.split(forma).join(" ");
