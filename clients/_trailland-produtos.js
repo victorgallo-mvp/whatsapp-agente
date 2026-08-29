@@ -11,47 +11,47 @@ module.exports = {
   tabelaPrecos: `TABELA DE PREÇOS (MXF Motors, julho 2026):
 
 MOTOS PERFORMANCE (atenção ao sufixo | é ele que muda o preço):
-Mxf 250 RXIR | 4T | R$ 52.490 (vermelha)
-Mxf 250 RXI | 4T | R$ 38.000 (vermelha)
-Mxf 250 TSX | 2T | R$ 34.900 (vermelha)
 Mxf 270 FI | 4T, trail com injeção | R$ 27.500 (vermelha)
 Mxf 270 MXI | 4T, motocross | R$ 33.900 (vermelha)
+Mxf 250 TSX | 2T | R$ 34.900 (vermelha)
+Mxf 250 RXI | 4T | R$ 38.000 (vermelha)
 Mxf 300 TSX | 2T | R$ 44.900 (vermelha)
+Mxf 250 RXIR | 4T | R$ 52.490 (vermelha)
 Mxf 300 TSX-R | 2T | R$ 54.990 (vermelha)
 
 LINHA RR:
-Pro Racing 150RR 4T | R$ 17.490 (vermelha, laranja)
-Pro Racing 125RR 4T | R$ 12.990 (azul, laranja, vermelha, verde)
 Pro Racing 110RR 4T | R$ 11.990 (azul, laranja, vermelha, verde)
+Pro Racing 125RR 4T | R$ 12.990 (azul, laranja, vermelha, verde)
+Pro Racing 150RR 4T | R$ 17.490 (vermelha, laranja)
 
 MINI MOTOS:
-Pro Racing 90RR 4T | R$ 9.590 (azul, laranja, vermelha, verde)
-Ferinha 60F 4T sem partida | R$ 6.490 (azul, vermelho)
-Mxf 50TS 2T | R$ 10.690 (vermelho, amarelo)
 Ferinha 49cc 2T | R$ 5.990 (azul, laranja, vermelho, verde)
+Ferinha 60F 4T sem partida | R$ 6.490 (azul, vermelho)
+Pro Racing 90RR 4T | R$ 9.590 (azul, laranja, vermelha, verde)
+Mxf 50TS 2T | R$ 10.690 (vermelho, amarelo)
 
 QUADRICICLOS 4X4 (atenção: Wolf 700 e Wolf 700 MUD são produtos diferentes):
-Wolf 1000 | 4T | R$ 96.990 (azul, camuflado, vermelho)
 Wolf 700 | 4T | R$ 27.500 (preto, laranja, azul)
 Wolf 700 MUD | 4T | R$ 38.000 (preto)
-Wolf 550 | 4T | R$ 44.900 (preto, vermelho)
 FOX 325 | 4T | R$ 41.890 (cinza, preto, vermelho)
+Wolf 550 | 4T | R$ 44.900 (preto, vermelho)
+Wolf 1000 | 4T | R$ 96.990 (azul, camuflado, vermelho)
 
 QUADRICICLOS 4X2:
+Brave 125 EFI 4T | R$ 15.290 (vermelho, verde, amarelo)
+Attack 125 EFI 4T | R$ 16.490 (vermelho, amarelo)
+Brave 150cc 4T | R$ 16.705 (amarelo, preto, vermelho)
+Attack 200 EFI 4T | R$ 27.390 (vermelho, preto, branco)
+FOX 250cc EFI | R$ 33.900 (cinza, preto, vermelho)
 XWOLF 300 | R$ 36.990 (laranja, preto, verde)
 XWOLF 230 | R$ 38.000 (preto, vermelho)
-FOX 250cc EFI | R$ 33.900 (cinza, preto, vermelho)
-Attack 200 EFI 4T | R$ 27.390 (vermelho, preto, branco)
-Brave 150cc 4T | R$ 16.705 (amarelo, preto, vermelho)
-Attack 125 EFI 4T | R$ 16.490 (vermelho, amarelo)
-Brave 125 EFI 4T | R$ 15.290 (vermelho, verde, amarelo)
 
 MINI QUADRICICLOS:
-Brave 110cc 4T | R$ 11.890 (azul, amarelo, vermelho, verde)
-Attack 90 | R$ 8.890 (azul, laranja, verde, vermelho)
-Thor 90cc 4T | R$ 8.390 (azul, amarelo, vermelho, verde)
-Brave 49cc | R$ 5.990 (amarelo, preto, verde, vermelho)
 Thor 49cc 2T | R$ 5.698 (azul, amarelo, vermelho, verde)
+Brave 49cc | R$ 5.990 (amarelo, preto, verde, vermelho)
+Thor 90cc 4T | R$ 8.390 (azul, amarelo, vermelho, verde)
+Attack 90 | R$ 8.890 (azul, laranja, verde, vermelho)
+Brave 110cc 4T | R$ 11.890 (azul, amarelo, vermelho, verde)
 
 ELÉTRICOS | E-BIKER:
 E-Biker 12 | R$ 3.990 (azul, laranja, verde, vermelho)
@@ -59,13 +59,24 @@ E-Biker 16 | R$ 5.990 (azul, laranja, verde, vermelho)
 E-Biker 16 Pro | R$ 6.990 (azul, laranja, verde, vermelho)
 
 DEMAIS ELÉTRICOS:
-MUV Flow 1000W | R$ 9.990 (amarelo, leaf, verde, vermelho)
 Brave Elétrico 1000W | R$ 4.890 (amarelo, preto, verde, vermelho)
 Thor Electric 1000W | R$ 5.990 (amarela, azul, verde, vermelho)
-Brave Elétrico 1500W | R$ 12.490 (laranja, verde, vermelho)
+MUV Flow 1000W | R$ 9.990 (amarelo, leaf, verde, vermelho)
 UTV Shark 1200W | R$ 9.990 (amarela, verde, vermelho)
 MUV Rebel 750W 48V | R$ 10.560 (cinza)
-MUV Vibe 750W 48V | R$ 10.560 (branco, cinza, preto, verde)`,
+MUV Vibe 750W 48V | R$ 10.560 (branco, cinza, preto, verde)
+Brave Elétrico 1500W | R$ 12.490 (laranja, verde, vermelho)`,
+
+  faixaDePreco: `QUANDO O CLIENTE DER UMA FAIXA DE PREÇO:
+
+A tabela está ordenada do mais barato pro mais caro dentro de cada linha. Percorra a lista na ordem e mostre o trecho que cobre a faixa, incluindo o modelo logo abaixo e o logo acima dela. Cliente que diz "30 a 50 mil" costuma topar ver algo por 27 mil, e às vezes esticar um pouco pra cima.
+Nunca deixe de fora um modelo que está dentro da faixa. Errar por mostrar demais é barato; errar por esconder faz o cliente não conhecer a máquina que ele queria.
+Não faça conta de cabeça pra decidir quem entra: use a ordem da tabela.
+
+NÃO INVENTE CLASSIFICAÇÃO DE MODELO:
+
+O catálogo não separa os modelos em "esportivo", "robusto", "pra iniciante", "top de linha" nem nada parecido. Se o cliente pedir por uma dessas palavras, não escolha por conta própria quais se encaixam.
+Trabalhe com o que existe: cilindrada, tração, tipo de motor, peso, altura do assento e preço. Diga o que a máquina tem e deixe ele concluir, ou pergunte o uso pretendido e responda pelo dado da ficha.`,
 
   variantes: `CILINDRADA NÃO IDENTIFICA O MODELO:
 
