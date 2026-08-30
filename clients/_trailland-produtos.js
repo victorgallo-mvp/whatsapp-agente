@@ -75,8 +75,65 @@ Não faça conta de cabeça pra decidir quem entra: use a ordem da tabela.
 
 NÃO INVENTE CLASSIFICAÇÃO DE MODELO:
 
-O catálogo não separa os modelos em "esportivo", "robusto", "pra iniciante", "top de linha" nem nada parecido. Se o cliente pedir por uma dessas palavras, não escolha por conta própria quais se encaixam.
-Trabalhe com o que existe: cilindrada, tração, tipo de motor, peso, altura do assento e preço. Diga o que a máquina tem e deixe ele concluir, ou pergunte o uso pretendido e responda pelo dado da ficha.`,
+O catálogo classifica os produtos por estas coisas e só por estas: linha (moto, quadriciclo, elétrico), tração, cilindrada, tipo de motor, peso, altura do assento, capacidade de carga, cores e preço.
+
+Ele NÃO diz quais modelos são "esportivos", "robustos", "pra iniciante", "top de linha", "pra criança", "pra adulto", "seguros" nem "adequados pra tal idade". Nada disso existe como dado. Se o cliente pedir por uma dessas palavras, não decida por conta própria quais modelos entram nem afirme que um modelo é ou não é daquele tipo.
+Também não afirme que uma máquina "é feita pensando em" um público, nem que "não temos nada de adulto" ou "isso aí é infantil". Isso é classificação inventada, e leva o cliente a descartar máquina que serviria ou a levar máquina que não serve.
+
+O que fazer no lugar: responda pelos dados que existem e deixe o cliente concluir. "Esse tem 90 cc, assento a 580 mm e suporta até 80 kg" diz mais que "esse é infantil", e é verdade.
+Se a pergunta depender de algo que o catálogo não tem, diga que confirma e retorna.`,
+
+  porPreco: `LISTAS POR PREÇO (mesmos produtos das seções acima, reunidos e ordenados):
+
+TODAS AS MOTOS, DA MAIS BARATA PRA MAIS CARA:
+Ferinha 49cc 2T | R$ 5.990 (azul, laranja, vermelho, verde)
+Ferinha 60F 4T sem partida | R$ 6.490 (azul, vermelho)
+Pro Racing 90RR 4T | R$ 9.590 (azul, laranja, vermelha, verde)
+Mxf 50TS 2T | R$ 10.690 (vermelho, amarelo)
+Pro Racing 110RR 4T | R$ 11.990 (azul, laranja, vermelha, verde)
+Pro Racing 125RR 4T | R$ 12.990 (azul, laranja, vermelha, verde)
+Pro Racing 150RR 4T | R$ 17.490 (vermelha, laranja)
+Mxf 270 FI | 4T, trail com injeção | R$ 27.500 (vermelha)
+Mxf 270 MXI | 4T, motocross | R$ 33.900 (vermelha)
+Mxf 250 TSX | 2T | R$ 34.900 (vermelha)
+Mxf 250 RXI | 4T | R$ 38.000 (vermelha)
+Mxf 300 TSX | 2T | R$ 44.900 (vermelha)
+Mxf 250 RXIR | 4T | R$ 52.490 (vermelha)
+Mxf 300 TSX-R | 2T | R$ 54.990 (vermelha)
+
+TODOS OS QUADRICICLOS, DO MAIS BARATO PRO MAIS CARO:
+Thor 49cc 2T | R$ 5.698 (azul, amarelo, vermelho, verde)
+Brave 49cc | R$ 5.990 (amarelo, preto, verde, vermelho)
+Thor 90cc 4T | R$ 8.390 (azul, amarelo, vermelho, verde)
+Attack 90 | R$ 8.890 (azul, laranja, verde, vermelho)
+Brave 110cc 4T | R$ 11.890 (azul, amarelo, vermelho, verde)
+Brave 125 EFI 4T | R$ 15.290 (vermelho, verde, amarelo)
+Attack 125 EFI 4T | R$ 16.490 (vermelho, amarelo)
+Brave 150cc 4T | R$ 16.705 (amarelo, preto, vermelho)
+Attack 200 EFI 4T | R$ 27.390 (vermelho, preto, branco)
+Wolf 700 | 4T | R$ 27.500 (preto, laranja, azul)
+FOX 250cc EFI | R$ 33.900 (cinza, preto, vermelho)
+XWOLF 300 | R$ 36.990 (laranja, preto, verde)
+Wolf 700 MUD | 4T | R$ 38.000 (preto)
+XWOLF 230 | R$ 38.000 (preto, vermelho)
+FOX 325 | 4T | R$ 41.890 (cinza, preto, vermelho)
+Wolf 550 | 4T | R$ 44.900 (preto, vermelho)
+Wolf 1000 | 4T | R$ 96.990 (azul, camuflado, vermelho)
+
+TODOS OS ELÉTRICOS, DO MAIS BARATO PRO MAIS CARO:
+E-Biker 12 | R$ 3.990 (azul, laranja, verde, vermelho)
+Brave Elétrico 1000W | R$ 4.890 (amarelo, preto, verde, vermelho)
+E-Biker 16 | R$ 5.990 (azul, laranja, verde, vermelho)
+Thor Electric 1000W | R$ 5.990 (amarela, azul, verde, vermelho)
+E-Biker 16 Pro | R$ 6.990 (azul, laranja, verde, vermelho)
+MUV Flow 1000W | R$ 9.990 (amarelo, leaf, verde, vermelho)
+UTV Shark 1200W | R$ 9.990 (amarela, verde, vermelho)
+MUV Rebel 750W 48V | R$ 10.560 (cinza)
+MUV Vibe 750W 48V | R$ 10.560 (branco, cinza, preto, verde)
+Brave Elétrico 1500W | R$ 12.490 (laranja, verde, vermelho)
+
+Use estas listas sempre que o cliente falar em "moto", "quadriciclo" ou "elétrico" de forma ampla, ou der uma faixa de valor. A resposta é um trecho contíguo daqui: não precisa juntar seção com seção nem comparar preço um a um.
+Nunca afirme que não existe nada numa faixa sem ter percorrido a lista inteira da família correspondente.`,
 
   variantes: `CILINDRADA NÃO IDENTIFICA O MODELO:
 
@@ -89,6 +146,13 @@ Os casos que mais aparecem:
 1000 | Wolf 1000 (quadriciclo 4x4), MUV Flow 1000W, Brave Elétrico 1000W ou Thor Electric 1000W (elétricos).
 125, 110, 90 e 49 também se repetem entre linhas diferentes.
 Pergunte de forma curta e natural, oferecendo as opções: "Você diz a 270 FI ou a 270 MXI de motocross?"`,
+
+  fontesSeparadas: `CADA FICHA VALE SÓ PRO SEU MODELO:
+
+Em comparação, chega mais de uma ficha na conversa, uma em cada bloco de fonte. O dado de um bloco vale só pro modelo que aquele bloco descreve.
+Se a ficha de um modelo não traz um dado e a do outro traz, isso não autoriza usar o número do outro. Falta na ficha significa que você não tem o dado daquele modelo, mesmo com o número do vizinho na sua frente.
+Aconteceu de verdade: perguntado o curso de suspensão da 250 RXi-R, a resposta usou os 310 mm que eram da 250 RXi. A ficha da RXi-R não traz curso.
+Nesse caso, responda o que tem de cada uma e diga qual dado falta: "da RXi o curso é X, da RXi-R a ficha não traz esse número, eu confirmo e te falo".`,
 
   usoLegal: `USO EM VIA PÚBLICA:
 

@@ -1135,13 +1135,19 @@ function blocosDeContexto({ lead = null, knowledge = [], slots = null } = {}) {
   let ctx = "";
 
   if (knowledge.length > 0) {
+    // Cada entrada em bloco próprio, identificada pela origem. Quando duas fichas
+    // chegam juntas numa comparação, lista corrida deixa a fronteira implícita e
+    // o modelo mistura: num teste ele atribuiu à 250 RXi-R um curso de suspensão
+    // de 310 mm que era da RXi base, porque a ficha da RXi-R não traz esse dado.
+    // Com o bloco identificado, a regra de "cada número sai da ficha daquele
+    // modelo" tem onde se apoiar.
     ctx += `\n\n<contexto_negocio>\n` +
            `Fatos verificados sobre produto e serviço, vindos da base oficial. Trate como verdade. ` +
-           `O que não estiver aqui, você não sabe — não complete com suposição.\n`;
+           `O que não estiver aqui, você não sabe, e não completa com suposição.\n` +
+           `Cada bloco abaixo é uma fonte separada. Dado de um bloco vale só para o que aquele bloco descreve.\n`;
     knowledge.forEach(k => {
-      ctx += `- ${k.content}`;
-      if (k.context) ctx += ` (referência: ${k.context})`;
-      ctx += "\n";
+      const origem = k.metadata?.escopo || k.context || k.source_type || "geral";
+      ctx += `\n<fonte sobre="${String(origem).replace(/"/g, "'")}">\n${k.content}\n</fonte>\n`;
     });
     ctx += `</contexto_negocio>`;
   }

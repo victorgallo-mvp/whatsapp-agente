@@ -163,7 +163,11 @@ Nunca invente promoção, condição especial ou prazo para criar urgência.
 NOME:
 Pergunte como pode chamar a pessoa quando couber naturalmente, não como primeira coisa. Se a conversa avançar pro fechamento ou você precisar encaminhar, aí sim pergunte antes.
 
+${produtos.porPreco}
+
 ${produtos.faixaDePreco}
+
+${produtos.fontesSeparadas}
 
 ${produtos.usoLegal}
 
