@@ -139,6 +139,41 @@ consistente com o resto do padrão)
 
 ---
 
+## Número que também é pessoal
+
+Se a IA vai rodar num número que a pessoa usa no dia a dia, dois ajustes:
+
+**1. Retrato dos contatos, na instalação.** Depois de conectar o QR code e antes
+de liberar a IA, rode uma vez:
+
+```bash
+curl -X POST https://<bot>.up.railway.app/admin/contatos/retrato
+```
+
+Isso grava todo mundo que já tinha conversa com aquele número. Quem está nessa
+lista não é atendido pela IA — é gente com relação prévia, e quem responde é o
+dono. Conferir com `GET /admin/contatos`, e tirar alguém da lista com
+`DELETE /admin/contatos/<telefone>` se ele quiser que a IA atenda aquele contato.
+
+Só tem efeito se o `clients/<slug>.js` declarar `ignorarContatosConhecidos: true`.
+Não ligue isso num número que já vinha operando com IA: ela pararia de responder
+justamente os leads que já atendia.
+
+**2. Mensagem manual pausa a IA.** Qualquer coisa que o dono mandar pro cliente
+(texto, áudio, imagem, documento) desliga a IA naquela conversa. Reativação é
+manual, pelo toggle do dashboard. Não precisa configurar, já é o comportamento.
+
+## Grupo da empresa
+
+Para notificação chegar num grupo além do responsável, descubra o JID:
+
+```bash
+curl https://<bot>.up.railway.app/admin/grupos
+```
+
+e ponha o valor na env `GRUPO_EMPRESA`. O identificador termina em `@g.us` e não
+aparece no app do WhatsApp.
+
 ## Checklist rápido pra cada cliente novo
 
 - [ ] Ler `RISCO-BANIMENTO-WHATSAPP.md` e alinhar o risco com o cliente
@@ -152,6 +187,8 @@ consistente com o resto do padrão)
 - [ ] `GET /` do bot responde com o `company` certo
 - [ ] Base de conhecimento inicial indexada
 - [ ] Teste manual: manda "oi" pro número do cliente e confere a resposta
+- [ ] Se o número for pessoal do dono: retrato de contatos rodado ANTES de liberar
+- [ ] Se houver grupo da empresa: `GRUPO_EMPRESA` preenchido com o JID
 - [ ] Combinado com o time: **não usar o botão "Novo Lead"** em número de cliente
       enquanto estiver no Evolution (é disparo pra quem não pediu contato, o
       maior gatilho de banimento)

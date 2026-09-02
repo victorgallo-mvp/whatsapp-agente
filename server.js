@@ -38,6 +38,9 @@ const NOTIFICACOES = {
   email_responsavel:    process.env.EMAIL_RESPONSAVEL    || "PREENCHA_AQUI",
   gmail_remetente:      process.env.GMAIL_REMETENTE      || "PREENCHA_AQUI",
   gmail_senha_app:      process.env.GMAIL_SENHA_APP      || "PREENCHA_AQUI",
+  // JID do grupo da empresa (termina em @g.us). Opcional: sem ele, notificação
+  // vai só pro responsável. Descubra o JID com GET /admin/grupos.
+  grupo_empresa:        process.env.GRUPO_EMPRESA        || "",
 };
 
 // Cada cliente é um arquivo em clients/<slug>.js (mesmo motor, prompt e config
@@ -165,6 +168,19 @@ async function initDb() {
   `);
   await db.query(`CREATE INDEX IF NOT EXISTS idx_playground_sessao ON playground_mensagens (session_id, created_at)`);
 
+  // Contatos que já conversavam com este número antes da IA entrar. Serve pra
+  // não atender quem já tem relação com o dono: contato pessoal, fornecedor,
+  // cliente antigo que ele mesmo atende. Populado uma vez na instalação, a
+  // partir das conversas que a instância do Evolution já tem.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS contatos_conhecidos (
+      phone       TEXT PRIMARY KEY,
+      nome        TEXT,
+      origem      TEXT DEFAULT 'retrato_instalacao',
+      created_at  TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
   console.log("Banco de dados pronto.");
 }
 
@@ -286,7 +302,13 @@ async function analisarImagem(imageUrl) {
           role:    "user",
           content: [
             { type: "image", source: { type: "base64", media_type: mediaType, data: base64 } },
-            { type: "text",  text: "Analise esta imagem no contexto de uma empresa de impressão e comunicação visual. Descreva em até 3 linhas: tipo de imagem (arte finalizada para impressão, foto de local para instalação, imagem de referência, logotipo, etc.), características relevantes como dimensões estimadas, tipo de superfície, formato ou qualidade aparente. Seja objetivo e técnico. Responda em português." }
+            { type: "text",  text: `Descreva esta imagem para a equipe de ${EMPRESA}, em até 4 linhas, de forma objetiva.
+
+Se for comprovante de pagamento ou transferência (PIX, TED, depósito), transcreva literalmente o que está visível: valor, data e hora, nome do pagador, nome do favorecido, instituição e identificador da transação. Não conclua se o pagamento é verdadeiro nem se o dinheiro entrou — isso não se verifica por imagem. Apenas transcreva o que está escrito e diga se algum desses campos não aparece.
+
+Se for outro tipo de imagem (foto de veículo, documento, print de conversa, local), diga o que é e o que aparece de relevante.
+
+Responda em português.` }
           ]
         }]
       },
@@ -960,35 +982,51 @@ app.post("/webhook", async (req, res) => {
 
     // Mensagem enviada da própria instância (operador via WhatsApp Web/App)
     if (body.fromMe) {
-      if (body.text?.message && body.phone) {
-        const isToResponsavel = foneResponsavel.length > 5 && (
-          foneBody === foneResponsavel ||
-          semDDI(foneBody) === semDDI(foneResponsavel) ||
-          sem9(foneBody) === sem9(foneResponsavel)
-        );
-        if (!isToResponsavel) {
-          upsertLead(body.phone, {}).catch(err => console.error("[WEBHOOK] upsertLead fromMe erro:", err.message));
-          await addToHistory(body.phone, "assistant", "[DIRETO] " + body.text.message);
+      const isToResponsavel = foneResponsavel.length > 5 && (
+        foneBody === foneResponsavel ||
+        semDDI(foneBody) === semDDI(foneResponsavel) ||
+        sem9(foneBody) === sem9(foneResponsavel)
+      );
 
-          // Humano respondeu direto pelo celular/WhatsApp Web: pausa a IA nesse
-          // chat. Sem isso os dois falam com o cliente ao mesmo tempo — o
-          // atendente escreve, o cliente responde, e a Olivia responde por cima
-          // sem saber do que foi combinado. Reativação é manual no dashboard,
-          // igual ao handoff.
-          //
-          // Seguro porque mensagem enviada pela nossa própria API não volta como
-          // fromMe: no histórico da Comunynk há 493 respostas da IA para apenas
-          // 34 [DIRETO], todas com cara de humano. Se ecoasse, os números seriam
-          // iguais e a IA se pausaria sozinha na primeira resposta.
-          const res = await db.query(
-            `UPDATE leads SET olivia_ativa = FALSE WHERE phone = $1 AND olivia_ativa IS DISTINCT FROM FALSE`,
-            [body.phone]
-          );
-          if (res.rowCount > 0) {
-            console.log("[DIRETO] Atendente assumiu — " + AGENTE + " pausada para:", body.phone);
+      // Qualquer coisa que ELE mandar pro cliente pausa a IA nesse chat, não só
+      // texto. Antes só texto contava, e nos áudios reais dele quase tudo é voz:
+      // ele respondia o cliente falando, a IA não pausava, não registrava nada e
+      // seguia respondendo por cima do que ele tinha combinado.
+      if (body.phone && !isToResponsavel) {
+        let registro;
+        if (body.text?.message) {
+          registro = "[DIRETO] " + body.text.message;
+        } else if (body.audio && body.rawMsg && GROQ_API_KEY) {
+          // Transcreve o áudio dele também: o que ele fala é o que o cliente
+          // ouviu, e sem isso a conversa fica com um buraco justo onde a
+          // negociação acontece.
+          try {
+            const t = await transcreverAudio(body.rawMsg);
+            registro = "[DIRETO] (áudio) " + (t || "não foi possível transcrever");
+          } catch (err) {
+            console.error("[DIRETO] Falha ao transcrever áudio do operador:", err.message);
+            registro = "[DIRETO] (áudio enviado)";
           }
-          broadcastSSE("leads_update", { phone: body.phone });
+        } else if (body.audio)    registro = "[DIRETO] (áudio enviado)";
+        else if (body.image)      registro = "[DIRETO] (imagem enviada)" + (body.image.caption ? " — " + body.image.caption : "");
+        else if (body.document)   registro = "[DIRETO] (documento enviado: " + (body.document.fileName || "arquivo") + ")";
+        else if (body.video)      registro = "[DIRETO] (vídeo enviado)";
+        else if (body.sticker)    registro = "[DIRETO] (figurinha)";
+        else if (body.location)   registro = "[DIRETO] (localização enviada)";
+        else if (body.contact)    registro = "[DIRETO] (contato enviado)";
+        else                      registro = "[DIRETO] (mensagem enviada)";
+
+        upsertLead(body.phone, {}).catch(err => console.error("[WEBHOOK] upsertLead fromMe erro:", err.message));
+        await addToHistory(body.phone, "assistant", registro);
+
+        const res = await db.query(
+          `UPDATE leads SET olivia_ativa = FALSE WHERE phone = $1 AND olivia_ativa IS DISTINCT FROM FALSE`,
+          [body.phone]
+        );
+        if (res.rowCount > 0) {
+          console.log("[DIRETO] Operador assumiu — " + AGENTE + " pausada para:", body.phone);
         }
+        broadcastSSE("leads_update", { phone: body.phone });
       }
       return;
     }
@@ -1002,6 +1040,21 @@ app.post("/webhook", async (req, res) => {
     if (ehResponsavel) {
       await processarMensagemResponsavel(body);
       return;
+    }
+
+    // Contato que já falava com este número antes da IA entrar: não atende.
+    // É gente com relação prévia com o dono, e quem responde é ele. Registra a
+    // mensagem pra aparecer no painel e segue sem gerar resposta.
+    if (AGENT_CONFIG.ignorarContatosConhecidos) {
+      const conhecido = await db.query(`SELECT nome FROM contatos_conhecidos WHERE phone = $1`, [foneBody]);
+      if (conhecido.rows[0]) {
+        const texto = body.text?.message || (body.audio ? "(áudio)" : body.image ? "(imagem)" : "(mensagem)");
+        await addToHistory(body.phone, "user", texto);
+        await db.query(`UPDATE leads SET olivia_ativa = FALSE WHERE phone = $1`, [body.phone]).catch(() => {});
+        broadcastSSE("leads_update", { phone: body.phone });
+        console.log("[CONTATO CONHECIDO] Sem resposta automática para:", foneBody, conhecido.rows[0].nome || "");
+        return;
+      }
     }
 
     // Áudio: tenta transcrever com Groq Whisper
@@ -1095,10 +1148,18 @@ function sanitizePhone(phone) {
   return (phone || "").replace(/\D/g, "");
 }
 
+// Destino pode ser telefone ou grupo. Grupo vem como JID terminado em @g.us e
+// não pode passar por sanitizePhone, que arrancaria o sufixo e transformaria o
+// grupo num número inexistente.
+function destinoWpp(dest) {
+  const d = String(dest || "");
+  return d.endsWith("@g.us") ? d : sanitizePhone(d);
+}
+
 async function sendZAPIMessage(phone, text) {
   await axios.post(
     `${EVOLUTION_URL}/message/sendText/${EVOLUTION_INSTANCE}`,
-    { number: sanitizePhone(phone), text },
+    { number: destinoWpp(phone), text },
     { headers: EVOLUTION_HEADERS() }
   );
 }
@@ -1791,6 +1852,18 @@ async function notificarResponsavel(assunto, corpo) {
   } else {
     console.log("[NOTIFICACAO - WHATSAPP NAO CONFIGURADO] " + assunto);
   }
+
+  // Grupo da empresa, quando configurado. Vai além do responsável porque tem
+  // aviso que a equipe inteira precisa ver na hora, como comprovante de
+  // pagamento chegando.
+  if (NOTIFICACOES.grupo_empresa) {
+    try {
+      await sendZAPIMessage(NOTIFICACOES.grupo_empresa, assunto + "\n\n" + corpo);
+      console.log("Notificacao enviada ao grupo da empresa.");
+    } catch (err) {
+      console.error("Erro ao notificar grupo:", err.response?.data || err.message);
+    }
+  }
 }
 
 // ─── API: CONTROLE DA OLIVIA POR CHAT ────────────────────────────────────────
@@ -2061,6 +2134,76 @@ app.post("/admin/leads/:phone/resumir", async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// ─── CONTATOS CONHECIDOS ─────────────────────────────────────────────────────
+// Tira um retrato de quem já conversava com este número antes da IA entrar.
+// Roda uma vez, na instalação. Quem estiver nessa lista não é atendido pela IA:
+// é gente que já tem relação com o dono e que ele mesmo atende.
+//
+// Só vale se o cliente ligar ignorarContatosConhecidos no config — ligar isso
+// num número que já operava com IA faria ela parar de responder aos leads que
+// ela mesma vinha atendendo.
+app.post("/admin/contatos/retrato", async (req, res) => {
+  if (!EVOLUTION_URL || !EVOLUTION_API_KEY) {
+    return res.status(503).json({ error: "Evolution não configurado" });
+  }
+  try {
+    const r = await axios.post(
+      `${EVOLUTION_URL}/chat/findChats/${EVOLUTION_INSTANCE}`,
+      {},
+      { headers: EVOLUTION_HEADERS(), timeout: 60000 }
+    );
+    const chats = Array.isArray(r.data) ? r.data : (r.data?.chats || []);
+    let salvos = 0, grupos = 0;
+
+    for (const c of chats) {
+      const jid = c.remoteJid || c.id || c.jid || "";
+      if (!jid) continue;
+      if (jid.endsWith("@g.us")) { grupos++; continue; }   // grupo já é ignorado no webhook
+      const phone = jid.replace(/@s\.whatsapp\.net$/, "").replace(/\D/g, "");
+      if (!phone) continue;
+      await db.query(
+        `INSERT INTO contatos_conhecidos (phone, nome) VALUES ($1, $2) ON CONFLICT (phone) DO NOTHING`,
+        [phone, c.pushName || c.name || null]
+      );
+      salvos++;
+    }
+    const total = await db.query(`SELECT COUNT(*)::int n FROM contatos_conhecidos`);
+    console.log(`[CONTATOS] Retrato: ${salvos} conversas individuais, ${grupos} grupos ignorados`);
+    res.json({ ok: true, conversas_lidas: chats.length, individuais: salvos, grupos_ignorados: grupos, total_na_base: total.rows[0].n });
+  } catch (err) {
+    res.status(500).json({ error: err.response?.data || err.message });
+  }
+});
+
+// Lista os grupos em que este número está, com o JID de cada um. É o que se
+// põe em GRUPO_EMPRESA: o identificador não aparece no app do WhatsApp.
+app.get("/admin/grupos", async (req, res) => {
+  if (!EVOLUTION_URL || !EVOLUTION_API_KEY) return res.status(503).json({ error: "Evolution não configurado" });
+  try {
+    const r = await axios.get(
+      `${EVOLUTION_URL}/group/fetchAllGroups/${EVOLUTION_INSTANCE}?getParticipants=false`,
+      { headers: EVOLUTION_HEADERS(), timeout: 60000 }
+    );
+    const grupos = (Array.isArray(r.data) ? r.data : r.data?.groups || [])
+      .map(g => ({ nome: g.subject || g.name || "(sem nome)", jid: g.id || g.remoteJid }))
+      .filter(g => g.jid);
+    res.json({ total: grupos.length, grupos, comoUsar: "copie o jid e ponha na env GRUPO_EMPRESA" });
+  } catch (err) {
+    res.status(500).json({ error: err.response?.data || err.message });
+  }
+});
+
+app.get("/admin/contatos", async (req, res) => {
+  const r = await db.query(`SELECT COUNT(*)::int n FROM contatos_conhecidos`);
+  const amostra = await db.query(`SELECT phone, nome FROM contatos_conhecidos ORDER BY created_at DESC LIMIT 10`);
+  res.json({ total: r.rows[0].n, amostra: amostra.rows });
+});
+
+app.delete("/admin/contatos/:phone", async (req, res) => {
+  const r = await db.query(`DELETE FROM contatos_conhecidos WHERE phone = $1`, [sanitizePhone(req.params.phone)]);
+  res.json({ ok: true, removidos: r.rowCount });
 });
 
 // Transcreve um áudio enviado em base64, pelo mesmo caminho que o áudio do

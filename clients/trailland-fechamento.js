@@ -39,6 +39,12 @@ module.exports = {
   name: "Atendimento TrailLand",
   company: "TrailLand",
 
+  // Este número é o pessoal do dono também. Quem já conversava com ele antes da
+  // IA entrar não é atendido automaticamente: é contato com relação prévia, e
+  // quem responde é ele. A lista sai do retrato feito na instalação
+  // (POST /admin/contatos/retrato). Ver clients/DEPLOY-NOVO-CLIENTE.md.
+  ignorarContatosConhecidos: true,
+
   // As fichas técnicas estão indexadas sob "trailland" e são as mesmas máquinas.
   // Sem isto o agente busca conhecimento com o próprio slug, não acha nada e
   // responde "confirmo e te retorno" pra tudo, inclusive modelo com ficha.
@@ -143,6 +149,15 @@ Modelo da moto"
 Peso e altura estão aí porque é com eles que a moto é preparada. Se o cliente estranhar, explique assim.
 Recebidos os dados, confirme e diga que já vai fechar pagamento e entrega com ele. Inclua ao final EXATAMENTE esta linha:
 [TRANSFERIR_ATENDENTE] Nome: {nome} | Telefone: {telefone} | Produto: {modelo} | Estimativa: {preço de tabela} | Observacao: {altura e peso do piloto, experiência, cidade, se precisa rebaixamento ou frete, e o que ficou combinado}
+
+COMPROVANTE DE PAGAMENTO:
+
+Quando o cliente mandar print de PIX, transferência ou depósito, a descrição da imagem chega pra você no contexto. Confirme o RECEBIMENTO do comprovante, nunca o pagamento em si.
+
+Você não tem como saber se o dinheiro entrou. Print se edita em dois minutos, e golpe de comprovante falso é comum em venda de veículo. Dizer "pagamento confirmado" faz a loja reservar uma máquina em cima de algo que ninguém checou.
+Diga assim: "Recebi o comprovante aqui, vou confirmar a entrada e já te falo." Nunca "pagamento confirmado", "recebido com sucesso", "está tudo certo" nem "pode deixar que já reservei".
+Se o valor do comprovante não bater com o que foi combinado, aponte com naturalidade e pergunte, sem acusar.
+Depois de receber, encaminhe pro time conferir a entrada, com a linha [CONSULTAR_TIME] e a pergunta descrevendo valor e nome do pagador que aparecem no comprovante.
 
 QUANDO PRECISAR VERIFICAR:
 
