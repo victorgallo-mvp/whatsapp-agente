@@ -866,6 +866,7 @@ async function processarMensagensPendentes(userId) {
       .replace(/\[PRECISA_SUPORTE\].*/g, "")
       .replace(/\[TRANSFERIR_ATENDENTE\].*/g, "")
       .replace(/\[CONSULTAR_TIME\].*/g, "")
+      .replace(/\[COMPROVANTE_RECEBIDO\].*/g, "")
       .trim();
 
     // Resposta composta só de tag some inteira ao limpar os marcadores. Sem
@@ -1545,6 +1546,37 @@ async function verificarGatilhos(reply, userId) {
     console.log("[TRANSFERIR_ATENDENTE]", nome, "|", produto, "| Olivia desativada para:", userId);
   }
 
+  // ─── COMPROVANTE DE PAGAMENTO ──────────────────────────────────────────────
+  // Não pausa a IA, de propósito. O cliente acabou de mandar dinheiro: sumir
+  // nesse momento é o pior atendimento possível, e não é necessário. Ela sabe
+  // seguir a conversa — o que ela não pode é afirmar que o dinheiro entrou.
+  // A verificação é humana e acontece em paralelo, com o aviso indo pro grupo.
+  if (reply.includes("[COMPROVANTE_RECEBIDO]")) {
+    const linha    = reply.match(/\[COMPROVANTE_RECEBIDO\](.*)/)?.[1]?.trim() || "";
+    const nome     = linha.match(/Cliente: ([^|]+)/)?.[1]?.trim()   || "Cliente";
+    const telefone = linha.match(/Telefone: ([^|]+)/)?.[1]?.trim()  || userId;
+    const valor    = linha.match(/Valor: ([^|]+)/)?.[1]?.trim()     || "não identificado";
+    const produto  = linha.match(/Produto: ([^|]+)/)?.[1]?.trim()   || "não informado";
+    const dados    = linha.match(/Dados: ([^|]+)/)?.[1]?.trim()     || "";
+    const foneWA   = formatarTelefoneWA(telefone);
+
+    await upsertLead(userId, { nome, stage: "fechando" });
+    await notificarResponsavel(
+      `COMPROVANTE PARA CONFERIR — ${nome} (${valor})`,
+      `Cliente mandou comprovante de pagamento. CONFIRA A ENTRADA NO EXTRATO antes de liberar qualquer coisa.\n\n` +
+      `Cliente: ${nome}\n` +
+      `Telefone: ${telefone}\n` +
+      `Produto: ${produto}\n` +
+      `Valor no comprovante: ${valor}\n` +
+      (dados ? `Outros dados do comprovante: ${dados}\n` : "") +
+      `\nAbrir conversa: https://wa.me/${foneWA}\n\n` +
+      `A ${AGENTE} confirmou apenas o RECEBIMENTO do print, não o pagamento, e segue atendendo. ` +
+      `Print de comprovante se edita com facilidade: só considere pago o que aparecer no extrato.`
+    );
+    broadcastSSE("leads_update", { phone: userId });
+    console.log("[COMPROVANTE_RECEBIDO]", nome, "|", valor, "| IA segue ativa");
+  }
+
   // ─── DÚVIDA QUE A IA NÃO RESPONDE ──────────────────────────────────────────
   // "Confirmo e te retorno" é um compromisso assumido com o cliente. Sem isso
   // aqui era promessa vazia: ninguém ficava sabendo e o retorno nunca vinha.
@@ -1967,6 +1999,7 @@ app.post("/api/leads/iniciar", async (req, res) => {
       .replace(/\[PRECISA_SUPORTE\].*/g, "")
       .replace(/\[TRANSFERIR_ATENDENTE\].*/g, "")
       .replace(/\[CONSULTAR_TIME\].*/g, "")
+      .replace(/\[COMPROVANTE_RECEBIDO\].*/g, "")
       .trim();
 
     await sendZAPIMessage(phoneClean, mensagemLimpa);
@@ -2251,13 +2284,13 @@ app.get("/admin/knowledge/search", async (req, res) => {
 const playgroundSessions = new Map(); // sessionId -> [{ role, content }]
 const TAGS_GATILHO = ["LEAD_CAPTURADO", "VISITA_SOLICITADA", "ARTE_APROVADA", "ARTE_REVISAO",
                        "ORCAMENTO_APROVADO", "VISITA_REAGENDADA", "VISITA_CANCELADA", "PRECISA_SUPORTE",
-                       "TRANSFERIR_ATENDENTE", "CONSULTAR_TIME"];
+                       "TRANSFERIR_ATENDENTE", "CONSULTAR_TIME", "COMPROVANTE_RECEBIDO"];
 
 // Tags que desativam a IA em produção. O playground precisa simular isso, senão
 // dá falsa impressão nos fluxos de passagem: numa sessão de teste a IA disparou
 // PRECISA_SUPORTE e continuou respondendo normalmente, o que em atendimento real
 // não aconteceria — ela ficaria muda esperando o humano.
-const TAGS_QUE_PAUSAM = ["PRECISA_SUPORTE", "TRANSFERIR_ATENDENTE", "CONSULTAR_TIME"];
+const TAGS_QUE_PAUSAM = ["PRECISA_SUPORTE", "TRANSFERIR_ATENDENTE", "CONSULTAR_TIME", "COMPROVANTE_RECEBIDO"];
 const playgroundPausados = new Set(); // sessionId que já bateu numa tag de pausa
 
 app.get("/admin/playground/clients", (req, res) => {
