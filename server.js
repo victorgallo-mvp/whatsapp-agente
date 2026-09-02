@@ -2335,7 +2335,11 @@ const TAGS_GATILHO = ["LEAD_CAPTURADO", "VISITA_SOLICITADA", "ARTE_APROVADA", "A
 // dá falsa impressão nos fluxos de passagem: numa sessão de teste a IA disparou
 // PRECISA_SUPORTE e continuou respondendo normalmente, o que em atendimento real
 // não aconteceria — ela ficaria muda esperando o humano.
-const TAGS_QUE_PAUSAM = ["PRECISA_SUPORTE", "TRANSFERIR_ATENDENTE", "CONSULTAR_TIME", "COMPROVANTE_RECEBIDO", "VENDA_FECHADA"];
+// COMPROVANTE_RECEBIDO fica FORA desta lista de propósito: ele avisa o time e a
+// IA continua atendendo. Já esteve aqui por engano, e o playground passou a
+// simular uma pausa que produção não faz — simulação mentindo sobre o
+// comportamento real é pior que não simular.
+const TAGS_QUE_PAUSAM = ["PRECISA_SUPORTE", "TRANSFERIR_ATENDENTE", "CONSULTAR_TIME", "VENDA_FECHADA"];
 const playgroundPausados = new Set(); // sessionId que já bateu numa tag de pausa
 
 app.get("/admin/playground/clients", (req, res) => {
