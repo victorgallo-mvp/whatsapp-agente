@@ -867,6 +867,7 @@ async function processarMensagensPendentes(userId) {
       .replace(/\[TRANSFERIR_ATENDENTE\].*/g, "")
       .replace(/\[CONSULTAR_TIME\].*/g, "")
       .replace(/\[COMPROVANTE_RECEBIDO\].*/g, "")
+      .replace(/\[VENDA_FECHADA\].*/g, "")
       .trim();
 
     // Resposta composta só de tag some inteira ao limpar os marcadores. Sem
@@ -1546,6 +1547,49 @@ async function verificarGatilhos(reply, userId) {
     console.log("[TRANSFERIR_ATENDENTE]", nome, "|", produto, "| Olivia desativada para:", userId);
   }
 
+  // ─── VENDA FECHADA ─────────────────────────────────────────────────────────
+  // Sinal pago e cadastro completo. Vai pro grupo de vendas no formato que a
+  // equipe usa pra abrir a ordem de serviço e mandar pra fila de montagem.
+  // Pausa a IA: daqui pra frente é preparação e entrega, processo do time.
+  if (reply.includes("[VENDA_FECHADA]")) {
+    const linha = reply.match(/\[VENDA_FECHADA\](.*)/)?.[1]?.trim() || "";
+    const campo = n => linha.match(new RegExp(n + ": ([^|]+)"))?.[1]?.trim() || "";
+    const nome  = campo("Nome") || "Cliente";
+    const tel   = campo("Telefone") || userId;
+    const foneWA = formatarTelefoneWA(tel);
+
+    await upsertLead(userId, { nome, endereco: campo("Endereco"), stage: "fechado" });
+    await db.query(`UPDATE leads SET olivia_ativa = FALSE WHERE phone = $1`, [userId]);
+
+    // Formato de ficha, pra equipe copiar direto pro sistema
+    const ficha =
+      `NOME: ${nome}\n` +
+      `CPF: ${campo("CPF")}\n` +
+      `RG: ${campo("RG")}\n` +
+      `ENDEREÇO: ${campo("Endereco")}\n` +
+      `BAIRRO: ${campo("Bairro")}\n` +
+      `CIDADE: ${campo("Cidade")}\n` +
+      `ESTADO: ${campo("Estado")}\n` +
+      `CEP: ${campo("CEP")}\n` +
+      `TELEFONE: ${tel}\n` +
+      `E-MAIL: ${campo("Email")}\n` +
+      `PESO: ${campo("Peso")}\n` +
+      `ALTURA: ${campo("Altura")}\n` +
+      `MODELO DA MOTO: ${campo("Modelo")}`;
+
+    const obs = campo("Observacao");
+    await notificarResponsavel(
+      `VENDA FECHADA — ${nome} (${campo("Modelo")})`,
+      `Sinal de reserva pago e cadastro completo. Abrir ordem de serviço e mandar pra fila de montagem.\n\n` +
+      ficha +
+      (obs ? `\n\nOBSERVAÇÕES: ${obs}` : "") +
+      `\n\nAbrir conversa: https://wa.me/${foneWA}\n\n` +
+      `Confira a entrada do sinal no extrato antes de liberar a montagem. A ${AGENTE} foi desativada nesse chat.`
+    );
+    broadcastSSE("leads_update", { phone: userId });
+    console.log("[VENDA_FECHADA]", nome, "|", campo("Modelo"));
+  }
+
   // ─── COMPROVANTE DE PAGAMENTO ──────────────────────────────────────────────
   // Não pausa a IA, de propósito. O cliente acabou de mandar dinheiro: sumir
   // nesse momento é o pior atendimento possível, e não é necessário. Ela sabe
@@ -2000,6 +2044,7 @@ app.post("/api/leads/iniciar", async (req, res) => {
       .replace(/\[TRANSFERIR_ATENDENTE\].*/g, "")
       .replace(/\[CONSULTAR_TIME\].*/g, "")
       .replace(/\[COMPROVANTE_RECEBIDO\].*/g, "")
+      .replace(/\[VENDA_FECHADA\].*/g, "")
       .trim();
 
     await sendZAPIMessage(phoneClean, mensagemLimpa);
@@ -2284,13 +2329,13 @@ app.get("/admin/knowledge/search", async (req, res) => {
 const playgroundSessions = new Map(); // sessionId -> [{ role, content }]
 const TAGS_GATILHO = ["LEAD_CAPTURADO", "VISITA_SOLICITADA", "ARTE_APROVADA", "ARTE_REVISAO",
                        "ORCAMENTO_APROVADO", "VISITA_REAGENDADA", "VISITA_CANCELADA", "PRECISA_SUPORTE",
-                       "TRANSFERIR_ATENDENTE", "CONSULTAR_TIME", "COMPROVANTE_RECEBIDO"];
+                       "TRANSFERIR_ATENDENTE", "CONSULTAR_TIME", "COMPROVANTE_RECEBIDO", "VENDA_FECHADA"];
 
 // Tags que desativam a IA em produção. O playground precisa simular isso, senão
 // dá falsa impressão nos fluxos de passagem: numa sessão de teste a IA disparou
 // PRECISA_SUPORTE e continuou respondendo normalmente, o que em atendimento real
 // não aconteceria — ela ficaria muda esperando o humano.
-const TAGS_QUE_PAUSAM = ["PRECISA_SUPORTE", "TRANSFERIR_ATENDENTE", "CONSULTAR_TIME", "COMPROVANTE_RECEBIDO"];
+const TAGS_QUE_PAUSAM = ["PRECISA_SUPORTE", "TRANSFERIR_ATENDENTE", "CONSULTAR_TIME", "COMPROVANTE_RECEBIDO", "VENDA_FECHADA"];
 const playgroundPausados = new Set(); // sessionId que já bateu numa tag de pausa
 
 app.get("/admin/playground/clients", (req, res) => {
