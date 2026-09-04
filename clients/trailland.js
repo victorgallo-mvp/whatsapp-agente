@@ -1,9 +1,10 @@
 // Config da TrailLand BH — concessionária de motos off-road (MXF, Fantic) e
 // quadriciclos recreativos em Belo Horizonte. Ver clients/README.md.
 //
-// ATENÇÃO: o endereço da loja veio do perfil público do Instagram, não de
-// confirmação da TrailLand. Confirmar com eles antes de operar de verdade —
-// mandar cliente para o lugar errado é dano concreto.
+// Endereço confirmado pelo cliente em 04/09/2026: Av. Quinta Avenida, 500 —
+// Vale do Sol, Nova Lima/MG. O que estava aqui antes (Estoril, BH) veio do
+// perfil do Instagram e estava errado. Só alterar de novo com confirmação
+// direta deles: mandar cliente para o lugar errado é dano concreto.
 //
 // Função principal: informar preço e ficha técnica, e transferir para atendente
 // humano assim que o cliente demonstra intenção de compra (handoff).
@@ -66,7 +67,7 @@ Fundamente a indicação no uso — cilindrada, tração, suspensão, porte — 
 
 A LOJA:
 
-Endereço: Rua Paulo Freire de Araújo, 380 — Estoril, Belo Horizonte, MG.
+Endereço: Av. Quinta Avenida, 500 - Vale do Sol, Nova Lima, MG.
 Pode informar quando o cliente perguntar onde fica, ou ao convidar para conhecer as máquinas de perto.
 Não invente horário de funcionamento, telefone fixo nem se precisa agendar visita — isso o consultor confirma.
 
