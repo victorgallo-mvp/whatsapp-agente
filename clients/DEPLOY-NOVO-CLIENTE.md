@@ -30,18 +30,34 @@ fila do Evolution rodam melhor com Redis, mas ele funciona sem).
 
 No serviço do Evolution (não no Postgres), configura:
 
+Atalho que evita erro de digitação: abra o serviço Evolution de um cliente
+que **já funciona**, copie a lista inteira de variáveis e cole aqui, trocando
+só `AUTHENTICATION_API_KEY`, `DATABASE_CONNECTION_URI`, `CACHE_REDIS_URI` e
+`SERVER_URL`. É mais confiável que montar do zero, porque acompanha qualquer
+ajuste que a imagem do Evolution tenha exigido depois que este guia foi
+escrito.
+
 | Variável | Valor |
 |---|---|
 | `AUTHENTICATION_API_KEY` | uma chave secreta que você inventa (vira `EVOLUTION_API_KEY` do lado do bot) |
+| `SERVER_URL` | o domínio público deste próprio serviço (passo abaixo) |
 | `DATABASE_ENABLED` | `true` |
 | `DATABASE_PROVIDER` | `postgresql` |
 | `DATABASE_CONNECTION_URI` | a `DATABASE_URL` que o Railway gerou no passo 1.2 (referencia com `${{Postgres.DATABASE_URL}}` se estiver no mesmo projeto) |
 | `CACHE_REDIS_ENABLED` | `true` (se criou o Redis) |
 | `CACHE_REDIS_URI` | a URL do Redis do passo 1.2 |
 
+`SERVER_URL` é ovo de serpente: sem ela o Evolution sobe, conecta e parece
+saudável, mas monta as URLs de mídia apontando pro lugar errado — o sintoma
+aparece só depois, em foto e áudio que não baixam. É circular com o passo do
+domínio: gere o domínio primeiro, volte e preencha, e redeploy.
+
 Deploy. Depois que subir: **Settings → Networking → Generate Domain** pra
 ganhar uma URL pública (`https://evolution-trailland.up.railway.app` ou
-parecido). Essa URL é o `EVOLUTION_URL` do cliente.
+parecido). Essa URL é o `EVOLUTION_URL` do cliente, e é onde fica o
+**painel do Evolution: `https://<esse-dominio>/manager`**, que loga com a
+`AUTHENTICATION_API_KEY` e é por onde se cria a instância e se lê o QR code
+na tela (o QR expira em ~40s e o painel renova sozinho, diferente do curl).
 
 ### 1.4. Criar a instância (o número em si)
 
