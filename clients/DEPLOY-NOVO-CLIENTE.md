@@ -179,6 +179,22 @@ justamente os leads que já atendia.
 (texto, áudio, imagem, documento) desliga a IA naquela conversa. Reativação é
 manual, pelo toggle do dashboard. Não precisa configurar, já é o comportamento.
 
+## Desligar as automações do WhatsApp Business antes de ligar a IA
+
+No app do número, em **Configurações → Ferramentas comerciais**, desative
+**Mensagem de saudação** e **Mensagem de ausência**.
+
+Não é preferência estética, é incompatibilidade. Essas mensagens saem do
+próprio número, então chegam no webhook como `fromMe` — idênticas a uma
+mensagem digitada pelo dono. O bot lê isso como "o humano assumiu" e roda
+`olivia_ativa = FALSE`. Com a saudação ligada, toda conversa nova é pausada
+logo no primeiro "oi", e a IA morre antes de responder.
+
+O sintoma é traiçoeiro: parece "a IA não responde", e não há nada errado no
+bot. Quem for diagnosticar vai procurar no lugar errado.
+
+Respostas rápidas podem ficar — são manuais e só disparam se alguém escolher.
+
 ## Grupo da empresa
 
 Para notificação chegar num grupo além do responsável, descubra o JID:
@@ -194,6 +210,8 @@ aparece no app do WhatsApp.
 
 - [ ] Ler `RISCO-BANIMENTO-WHATSAPP.md` e alinhar o risco com o cliente
 - [ ] Número aquecido: usado manualmente por 2 a 5 dias antes de ligar a automação
+- [ ] Mensagem de saudação e de ausência DESATIVADAS no WhatsApp Business
+      (saem como `fromMe` e pausam a IA em toda conversa nova)
 - [ ] `clients/<slug>.js` criado e revisado
 - [ ] Projeto Evolution API no Railway (+ Postgres, + Redis opcional)
 - [ ] Instância criada e QR code escaneado no número do cliente
