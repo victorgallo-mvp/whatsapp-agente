@@ -2185,6 +2185,28 @@ app.post("/admin/knowledge", async (req, res) => {
   }
 });
 
+// Apaga entradas de um client_id, opcionalmente só de um source_type. Existe
+// porque o POST acima é INSERT puro, sem chave natural pra fazer upsert: rodar
+// um script de seed duas vezes duplicava tudo silenciosamente, e conhecimento
+// duplicado ocupa as vagas do topK com cópias da mesma coisa, empurrando para
+// fora resultado que era relevante. Com isso o seed passa a limpar antes de
+// escrever, e roda quantas vezes for preciso sem estragar a base.
+app.delete("/admin/knowledge", async (req, res) => {
+  const clientId   = req.query.clientId || req.query.client_id;
+  const sourceType = req.query.sourceType || req.query.source_type;
+  if (!clientId) return res.status(400).json({ error: "clientId obrigatorio (evita apagar a base de outro cliente por engano)" });
+  try {
+    const r = sourceType
+      ? await db.query(`DELETE FROM knowledge_base WHERE client_id = $1 AND source_type = $2`, [clientId, sourceType])
+      : await db.query(`DELETE FROM knowledge_base WHERE client_id = $1`, [clientId]);
+    console.log("[KNOWLEDGE] Removidas", r.rowCount, "entradas de", clientId, sourceType ? "| tipo " + sourceType : "| TODOS os tipos");
+    res.json({ ok: true, removidas: r.rowCount, client_id: clientId, source_type: sourceType || "(todos)" });
+  } catch (err) {
+    console.error("[KNOWLEDGE] Erro ao remover:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── ADMIN: DIAGNÓSTICO DO RAG ───────────────────────────────────────────────
 // Roda exatamente a mesma busca que a Olivia usa em tempo real, pra auditar
 // o que seria recuperado para uma mensagem qualquer — sem precisar simular

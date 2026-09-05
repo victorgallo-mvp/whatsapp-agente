@@ -101,6 +101,18 @@ async function main() {
     entries.forEach(e => console.log(`\n[${e.metadata.escopo}] termos: ${e.metadata.termos.join(", ")}\n  ${e.content.slice(0, 150)}...`));
     return;
   }
+  // Limpa antes de escrever. O POST /admin/knowledge é INSERT puro: sem isso,
+  // rodar o seed duas vezes duplica tudo, e as cópias disputam as vagas do topK
+  // com o conteúdo que deveria estar lá. Aconteceu na primeira indexação.
+  try {
+    const del = await axios.delete(`${BASE}/admin/knowledge`, { params: { clientId: "trailland", sourceType: "consorcio" }, timeout: 30000 });
+    console.log(`limpou ${del.data.removidas} entrada(s) de consórcio anteriores`);
+  } catch (err) {
+    console.error("Não consegui limpar as entradas antigas:", err.response?.data?.error || err.message);
+    console.error("Abortando: seguir daqui duplicaria a base.");
+    process.exit(1);
+  }
+
   let ok = 0, falhou = 0;
   for (const e of entries) {
     try {
