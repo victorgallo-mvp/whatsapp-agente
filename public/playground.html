@@ -103,6 +103,12 @@
 </main>
 
 <script>
+  // Nome do agente vem do backend: cada cliente batiza a IA de um jeito, e o
+  // playground serve todos eles. Sem isso a tela dizia "Olivia está digitando"
+  // enquanto o agente selecionado se apresentava com outro nome.
+  let AGENTE = "o agente";
+  fetch("/").then(r => r.json()).then(d => { if (d.agent) AGENTE = d.agent; }).catch(() => {});
+
   let sessionId = localStorage.getItem("playground-session") || crypto.randomUUID();
   localStorage.setItem("playground-session", sessionId);
 
@@ -165,7 +171,7 @@
 
     const loadingRow = document.createElement("div");
     loadingRow.className = "loading";
-    loadingRow.textContent = "Olivia está digitando...";
+    loadingRow.textContent = AGENTE + " está digitando...";
     messagesEl.appendChild(loadingRow);
     messagesEl.scrollTop = messagesEl.scrollHeight;
 
@@ -240,7 +246,7 @@
     sessionId = dados.novaSessao || crypto.randomUUID();
     localStorage.setItem("playground-session", sessionId);
 
-    messagesEl.innerHTML = '<div class="empty-hint">Atendimento novo. A Olivia não sabe nada da conversa anterior.</div>';
+    messagesEl.innerHTML = '<div class="empty-hint">Atendimento novo. ' + AGENTE + ' não sabe nada da conversa anterior.</div>';
     debugEl.innerHTML = '<span class="empty-hint" style="margin-top:0">Nada ainda.</span>';
   });
 

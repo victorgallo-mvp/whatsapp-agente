@@ -1391,7 +1391,7 @@ async function verificarGatilhos(reply, userId) {
     const msgSugerida = `Olá ${nome}, tudo bem? Sou da equipe da ${EMPRESA}. Passando para confirmar nossa conversa agendada para ${dataStr} às ${horario}, por ${endereco}. Qualquer dúvida, estou à disposição.`;
 
     const corpo =
-      `Reunião agendada pela Olivia.\n\n` +
+      `Reunião agendada pela ${AGENTE}.\n\n` +
       `Nome: ${nome}\n` +
       `Empresa: ${empresa}\n` +
       `Telefone: ${telefone}\n` +

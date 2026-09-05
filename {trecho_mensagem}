@@ -1,0 +1,192 @@
+— {remetente}, {hora}
+
+*Recomendação:*
+{recomendacao_acao}
+
+---
+Responda esta mensagem com:
+✅ *1* - Foi relevante, obrigado
+❌ *2* - Falso positivo, ignorar similar
+😴 *3* - Snooze 2h pra esse grupo
+💬 Qualquer outro texto - comentário pra eu aprender
+```
+
+`enviador.servico.js` envia via Evolution API endpoint de envio de mensagem (DM pro responsável).
+
+`throttling.js` evita:
+- Mais de 1 notificação do mesmo gatilho em < 30 min no mesmo grupo
+- Notificações fora do horário configurado do responsável (a menos que severidade = crítico)
+- Notificação se grupo está em "snooze" temporário
+
+## 6. Feedback loop
+
+Quando responsável responde DM do bot com "1", "2", "3" ou texto livre, o webhook captura isso (DM de um responsável cadastrado) e roteia pro `feedback/interpretador.js`.
+
+O sistema:
+- Salva no `Feedback` model
+- Atualiza estatísticas do grupo (relevantes vs falsos positivos)
+- Se falso positivo: extrai padrão (qual tipo de mensagem? qual gatilho?) e armazena pra calibração futura
+- Se snooze: marca grupo com `pausadoAte: now + 2h`
+
+Versão V2 (futuro): usa esse dado pra ajustar prompts automaticamente.
+
+## 7. Scripts utilitários (`scripts/`)
+
+### cadastrar-grupo.js
+
+CLI interativa:
+```bash
+node scripts/cadastrar-grupo.js
+```
+- Lista grupos onde o bot está presente (via Evolution API: GET /chats)
+- Permite escolher quais cadastrar
+- Pergunta: tipo de grupo, nível de sensibilidade, responsáveis
+- Salva no Mongo
+
+### cadastrar-responsavel.js
+
+CLI similar pra cadastrar pessoa que recebe notificações.
+
+### testar-deteccao.js
+
+Recebe uma mensagem manual + contexto fake, roda pipeline completo, mostra resultado:
+```bash
+node scripts/testar-deteccao.js "Quero falar com o gerente agora, isso é absurdo"
+```
+
+### simulador.js
+
+Simula sequência de mensagens em grupo fictício pra testar detecção, sem precisar de WhatsApp real conectado. Útil pra desenvolver sem ficar mandando mensagem em grupo de verdade.
+
+## 8. API administrativa (`src/api/rotas/admin.rota.js`)
+
+Proteja com token básico via header `x-admin-token`. Endpoints:
+
+- `GET /admin/clientes` — lista clientes cadastrados
+- `POST /admin/clientes` — cadastra cliente novo (multi-tenant)
+- `GET /admin/grupos` — lista grupos monitorados
+- `POST /admin/grupos` — cadastra grupo
+- `PATCH /admin/grupos/:id` — atualiza config de grupo
+- `DELETE /admin/grupos/:id` — desativa grupo
+- `GET /admin/responsaveis` — lista
+- `POST /admin/responsaveis` — cadastra
+- `GET /admin/estatisticas` — overview do sistema (mensagens processadas, notificações, custos, taxa de aproveitamento)
+- `GET /admin/grupos/:id/historico` — últimas notificações de um grupo
+
+## 9. Jobs periódicos
+
+### Limpeza diária
+
+Roda 03:00. Remove mensagens com mais de N dias (configurável, default 60), mantendo só análises e notificações.
+
+### Relatório diário
+
+Roda 08:00. Pra cada responsável com `receberRelatorioDiario: true`, envia DM com:
+- Total de notificações nas últimas 24h
+- Taxa de aproveitamento (relevantes / total)
+- Top 3 grupos com mais atividade
+- Sugestão: se taxa de falso positivo > 30%, sugere ajuste de sensibilidade
+
+## 10. Variáveis de ambiente (`.env.exemplo`)
+
+```env
+# Banco
+MONGO_URI=mongodb+srv://...
+
+# Anthropic
+ANTHROPIC_API_KEY=sk-ant-...
+MODELO_TRIAGEM=claude-haiku-4-5
+MODELO_ANALISE=claude-sonnet-4-5
+
+# Evolution API (instância principal — multi-tenant via Cliente model depois)
+EVOLUTION_API_URL=https://sua-instancia.com
+EVOLUTION_API_KEY=
+EVOLUTION_INSTANCE_NAME=
+
+# Cliente atual (mono-tenant operacional)
+CLIENT_ID=agencia-cobaia
+
+# Limites e segurança
+LIMITE_CUSTO_DIARIO_USD=5.00
+ADMIN_TOKEN=
+
+# Servidor
+PORT=3000
+NODE_ENV=development
+LOG_LEVEL=info
+
+# Webhooks (URL pública que Evolution vai chamar)
+WEBHOOK_URL_BASE=https://seu-app.up.railway.app
+```
+
+## 11. README
+
+`README.md` em PT-BR com:
+- Visão geral
+- Pré-requisitos (Node, Mongo, Evolution API rodando, conta WhatsApp dedicada)
+- Setup do Evolution API (link pra docs oficial, dica de usar Docker Compose)
+- Instalação do projeto
+- Configuração de env
+- Primeiro uso:
+  1. Subir Evolution API
+  2. Conectar número WhatsApp dedicado via QR code
+  3. Configurar webhook na Evolution apontando pro seu app
+  4. Rodar `cadastrar-grupo.js` pra adicionar grupos
+  5. Rodar `cadastrar-responsavel.js`
+  6. Subir bot — fim
+- Como rodar localmente
+- Como deployar no Railway
+- Estrutura do projeto
+- Como estender (novos gatilhos, novos canais de notificação)
+- Troubleshooting comum
+
+# REGRAS DE QUALIDADE DO CÓDIGO
+
+1. Logging estruturado via Winston, sem `console.log` em produção
+2. Tratamento de erro com try/catch + log + continuar processamento de outras mensagens
+3. Validação Zod em entradas de webhook e rotas admin
+4. Comentários explicam **por quê**, em PT-BR
+5. Funções pequenas (~30 linhas), responsabilidade única
+6. Sem hardcode de strings sensíveis
+7. Idempotência: receber o mesmo evento webhook duas vezes não causa duplicação (chave `idMensagemWhatsapp` única no Mongo)
+8. Limite de custo diário — antes de chamar Sonnet, verifica gasto do dia
+9. Retry com backoff exponencial em chamadas externas (Evolution, Claude)
+10. Testes mínimos (Vitest): pelo menos 1 teste pro classificador de gatilhos e pro filtro de grupo permitido
+
+# OUTPUT ESPERADO
+
+Crie o projeto completo seguindo a estrutura. Para cada arquivo:
+
+1. Implementação funcional (não stubs vazios)
+2. JSDoc no topo explicando responsabilidade
+3. Tratamento de erro
+4. Logging via Winston
+
+Após criar tudo, gere `PROXIMOS-PASSOS.md` listando:
+- O que preencher manualmente (env, cliente, grupos, responsáveis)
+- Ordem recomendada de validação
+- Como testar localmente sem WhatsApp real (usar simulador.js)
+- Como testar com grupo real de teste antes de plugar em grupo de produção
+- Possíveis melhorias V2: painel web, ML pra calibração automática, integração com CRM, multi-canal (Telegram, Discord)
+
+# COMO COMEÇAR
+
+1. Crie estrutura de pastas
+2. Inicialize package.json com dependências
+3. Crie .env.exemplo, .gitignore, README
+4. Implemente modelos MongoDB
+5. Implemente infra (mongo, logger, evolution-client)
+6. Implemente catálogo de gatilhos
+7. Implemente filtros (grupo-permitido, mensagem-válida)
+8. Implemente webhook controller
+9. Implemente pipeline IA (triagem + análise)
+10. Implemente contexto (janela rolante)
+11. Implemente classificador de gatilhos
+12. Implemente construtor e envio de notificação
+13. Implemente throttling
+14. Implemente feedback loop
+15. Implemente API admin
+16. Implemente jobs periódicos
+17. Implemente scripts utilitários
+18. Crie PROXIMOS-PASSOS.md
+

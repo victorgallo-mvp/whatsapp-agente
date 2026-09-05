@@ -356,7 +356,7 @@
 <header>
   <div class="header-brand">
     <span class="brand-name"><span class="cc">O</span>LIVIA</span>
-    <span class="brand-sub">Painel · Olivia</span>
+    <span class="brand-sub" data-agente="Painel · {AGENTE}">Painel · Olivia</span>
   </div>
   <span id="conn-status" class="disconnected">Conectando...</span>
 </header>
@@ -442,7 +442,7 @@
 <!-- Modal reativação -->
 <div class="modal-backdrop" id="activate-modal">
   <div class="modal-box">
-    <h3>Ativar Olivia</h3>
+    <h3 data-agente="Ativar {AGENTE}">Ativar Olivia</h3>
     <p>Deseja enviar uma mensagem de retorno para o cliente?</p>
     <textarea id="activate-msg"></textarea>
     <div class="modal-actions">
@@ -457,7 +457,7 @@
 <div class="modal-backdrop" id="novo-lead-modal">
   <div class="modal-box">
     <h3>Novo Lead</h3>
-    <p>Preencha os dados. A Olivia envia a mensagem de abertura automaticamente.</p>
+    <p data-agente="Preencha os dados. A {AGENTE} envia a mensagem de abertura automaticamente.">Preencha os dados. A Olivia envia a mensagem de abertura automaticamente.</p>
     <p style="background:var(--amber-lt);border:1px solid var(--amber);color:var(--amber);border-radius:8px;padding:8px 10px;font-size:12px;line-height:1.45">
       Atenção: isso envia a primeira mensagem para alguém que não escreveu antes,
       que é o maior gatilho de banimento do WhatsApp. Use só com quem pediu
@@ -541,8 +541,8 @@
   function previewMsg(content, role) {
     if (!content) return "";
     if (content.includes("[o cliente enviou uma imagem") || content.includes("[RELAY:ARTE]"))
-      return (role === "user" ? "" : "Olivia: ") + "🖼 Imagem";
-    const prefix = role === "user" ? "" : "Olivia: ";
+      return (role === "user" ? "" : AGENTE + ": ") + "🖼 Imagem";
+    const prefix = role === "user" ? "" : AGENTE + ": ";
     const clean  = content.replace(/\[.*?\]/g,"").replace(/\|.*$/g,"").trim();
     return prefix + (clean.length > 55 ? clean.slice(0,55) + "…" : clean);
   }
@@ -670,7 +670,7 @@
       });
       if (!r.ok) throw new Error(await r.text());
       closeNovoLead();
-      toast("Lead criado. Olivia enviou a mensagem de abertura.");
+      toast("Lead criado. " + AGENTE + " enviou a mensagem de abertura.");
       await fetchLeads();
       selectLead(phone);
     } catch (e) {
@@ -990,6 +990,12 @@
   document.getElementById("activate-modal").addEventListener("click", function(e) { if (e.target===this) closeModal(); });
   document.getElementById("novo-lead-modal").addEventListener("click", function(e) { if (e.target===this) closeNovoLead(); });
 
+  // Nome do agente. Fica numa variável porque cada cliente batiza a IA de um
+  // jeito (a TrailLand usa Lorrania, que é como os clientes já chamam quem
+  // atende ali). Preenchido pela marca dinâmica logo abaixo; o valor inicial é
+  // só o que aparece no piscar antes da rota "/" responder.
+  let AGENTE = "Olivia";
+
   // ─── MARCA DINÂMICA ──────────────────────────────────────────
   // Puxa o nome da empresa do próprio backend (rota "/") em vez de fixar no HTML —
   // assim o mesmo dashboard.html serve qualquer cliente, só muda o CLIENT_SLUG do deploy.
@@ -997,11 +1003,18 @@
     try {
       const r = await fetch("/");
       const { company, agent } = await r.json();
+      if (agent) AGENTE = agent;
       if (company) {
-        document.title = `${company} — Painel ${agent || "Olivia"}`;
+        document.title = `${company} — Painel ${AGENTE}`;
         const brandEl = document.querySelector(".brand-name");
         if (brandEl) brandEl.innerHTML = `<span class="cc">${company[0]}</span>${company.slice(1).toUpperCase()}`;
       }
+      // Os textos que citam o agente pelo nome ficavam fixos no HTML, então um
+      // deploy da TrailLand mostrava "Olivia" no painel enquanto a IA se
+      // apresentava como Lorrania na conversa.
+      document.querySelectorAll("[data-agente]").forEach(el => {
+        el.textContent = el.dataset.agente.replace("{AGENTE}", AGENTE);
+      });
     } catch (e) { console.error("marca dinamica:", e); }
   })();
 
