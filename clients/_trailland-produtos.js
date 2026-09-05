@@ -31,10 +31,11 @@ Pro Racing 90RR 4T | R$ 9.590 (azul, laranja, vermelha, verde)
 Mxf 50TS 2T | R$ 10.690 (vermelho, amarelo)
 
 QUADRICICLOS 4X4 (atenção: Wolf 700 e Wolf 700 MUD são produtos diferentes):
-Wolf 700 | 4T | R$ 27.500 (preto, laranja, azul)
-Wolf 700 MUD | 4T | R$ 38.000 (preto)
+
 FOX 325 | 4T | R$ 41.890 (cinza, preto, vermelho)
-Wolf 550 | 4T | R$ 44.900 (preto, vermelho)
+Wolf 550 | 4T | R$ 58.900 (preto, vermelho)
+Wolf 700 | 4T | R$ 66.900 (preto, laranja, azul)
+Wolf 700 MUD | 4T | R$ 77.900 (preto)
 Wolf 1000 | 4T | R$ 96.990 (azul, camuflado, vermelho)
 
 QUADRICICLOS 4X2:
@@ -102,6 +103,7 @@ Mxf 250 RXIR | 4T | R$ 52.490 (vermelha)
 Mxf 300 TSX-R | 2T | R$ 54.990 (vermelha)
 
 TODOS OS QUADRICICLOS, DO MAIS BARATO PRO MAIS CARO:
+
 Thor 49cc 2T | R$ 5.698 (azul, amarelo, vermelho, verde)
 Brave 49cc | R$ 5.990 (amarelo, preto, verde, vermelho)
 Thor 90cc 4T | R$ 8.390 (azul, amarelo, vermelho, verde)
@@ -111,13 +113,13 @@ Brave 125 EFI 4T | R$ 15.290 (vermelho, verde, amarelo)
 Attack 125 EFI 4T | R$ 16.490 (vermelho, amarelo)
 Brave 150cc 4T | R$ 16.705 (amarelo, preto, vermelho)
 Attack 200 EFI 4T | R$ 27.390 (vermelho, preto, branco)
-Wolf 700 | 4T | R$ 27.500 (preto, laranja, azul)
 FOX 250cc EFI | R$ 33.900 (cinza, preto, vermelho)
 XWOLF 300 | R$ 36.990 (laranja, preto, verde)
-Wolf 700 MUD | 4T | R$ 38.000 (preto)
 XWOLF 230 | R$ 38.000 (preto, vermelho)
 FOX 325 | 4T | R$ 41.890 (cinza, preto, vermelho)
-Wolf 550 | 4T | R$ 44.900 (preto, vermelho)
+Wolf 550 | 4T | R$ 58.900 (preto, vermelho)
+Wolf 700 | 4T | R$ 66.900 (preto, laranja, azul)
+Wolf 700 MUD | 4T | R$ 77.900 (preto)
 Wolf 1000 | 4T | R$ 96.990 (azul, camuflado, vermelho)
 
 TODOS OS ELÉTRICOS, DO MAIS BARATO PRO MAIS CARO:
