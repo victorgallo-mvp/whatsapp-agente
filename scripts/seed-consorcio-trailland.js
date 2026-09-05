@@ -35,6 +35,12 @@ const CTX = "consórcio, carta de crédito, parcela mensal, como funciona, ânco
 const entries = [
   {
     source_type: "consorcio",
+    context: "como funciona o consórcio, me explica o consórcio, quero saber sobre consórcio, vocês trabalham com consórcio, tem consórcio, como é o consórcio de vocês, consórcio de moto",
+    content: "Sim, a TrailLand trabalha com consórcio, pela Âncora Consórcios. Funciona assim: o cliente entra num grupo de participantes e paga uma parcela mensal. Todo mês há uma assembleia em que alguém é contemplado, por sorteio ou por lance, e recebe a carta de crédito para comprar a moto ou o quadriciclo na loja. Não tem juro como no financiamento: o que se paga além do valor do bem é a taxa de administração, que remunera a gestão do grupo. A contemplação não tem data garantida, então é caminho para quem tem prazo, não para quem quer sair pilotando essa semana. Os valores (parcela, prazo, carta e taxa) dependem do plano e quem passa é o consultor.",
+    metadata: { escopo: "Consórcio — visão geral", termos: ["consórcio", "consorcio", "consorio", "consócio"] },
+  },
+  {
+    source_type: "consorcio",
     context: `com quem é o consórcio da trailland, qual administradora, ${CTX}`,
     content: "A TrailLand trabalha com a Âncora Consórcios (Âncora Administradora, de Franca/SP). O consórcio não é da loja: a TrailLand é o ponto de venda, e quem faz a gestão do grupo, realiza as assembleias e libera a carta de crédito é a Âncora. Isso importa quando o cliente pergunta de processo interno, prazo de análise ou documentação — parte disso é da administradora, não da loja.",
     metadata: { escopo: "Administradora do consórcio", termos: ["consórcio", "consorcio", "âncora", "ancora", "administradora"] },
