@@ -926,21 +926,7 @@ function ehRespostaAutomatica(texto) {
   return AUTO_REPLY_PATTERNS.some(p => lower.includes(p));
 }
 
-function parseWebhookBody(raw) {
-  if (!raw.data?.key) return raw;
-  const data = raw.data;
-  const key  = data.key;
-  const msg  = data.message || {};
-  const jid  = key.remoteJid || "";
-  const phone = jid.replace(/@s\.whatsapp\.net$/, "").replace(/@g\.us$/, "");
-
-  const imageMsg = msg.imageMessage;
-  const docMsg   = msg.documentMessage
-                || msg.documentWithCaptionMessage?.message?.documentMessage;
-  const audioMsg = msg.audioMessage;
-
-  // Extração de texto — cobre mensagens diretas, encaminhadas e templates
-  // Anúncio de origem (click-to-WhatsApp). O Meta anexa o conteúdo do anúncio na
+// Anúncio de origem (click-to-WhatsApp). O Meta anexa o conteúdo do anúncio na
 // primeira mensagem, em contextInfo.externalAdReply: título, corpo e link do
 // post. É o que diz QUAL produto a pessoa estava vendo quando resolveu chamar.
 function extrairAnuncio(data, msg) {
@@ -959,6 +945,21 @@ function extrairAnuncio(data, msg) {
   return { titulo: titulo.slice(0, 200), corpo: corpo.slice(0, 900), url: ad.sourceUrl || "" };
 }
 
+function parseWebhookBody(raw) {
+  if (!raw.data?.key) return raw;
+  const data = raw.data;
+  const key  = data.key;
+  const msg  = data.message || {};
+  const jid  = key.remoteJid || "";
+  const phone = jid.replace(/@s\.whatsapp\.net$/, "").replace(/@g\.us$/, "");
+
+  const imageMsg = msg.imageMessage;
+  const docMsg   = msg.documentMessage
+                || msg.documentWithCaptionMessage?.message?.documentMessage;
+  const audioMsg = msg.audioMessage;
+
+  // Extração de texto — cobre mensagens diretas, encaminhadas e templates
+  
   const textoRaw = msg.conversation
     || msg.extendedTextMessage?.text
     || msg.ephemeralMessage?.message?.conversation
@@ -1160,17 +1161,20 @@ app.post("/webhook", async (req, res) => {
 
     console.log("[" + userId + "] " + body.text.message);
     // Garante que o lead existe no banco imediatamente (antes de Olivia processar)
-    upsertLead(userId, {}).catch(err => console.error("[WEBHOOK] upsertLead erro:", err.message));
-
-    // Grava o anúncio de origem só na primeira vez (IS NULL). Um mesmo lead pode
-    // voltar por outro anúncio meses depois; o que interessa é o que trouxe ele
-    // para esta conversa, e sobrescrever faria a IA falar do anúncio errado.
-    if (body.anuncio) {
-      const resumoAd = [body.anuncio.titulo, body.anuncio.corpo].filter(Boolean).join("\n");
-      db.query(`UPDATE leads SET anuncio_origem = $2 WHERE phone = $1 AND anuncio_origem IS NULL`, [userId, resumoAd])
-        .then(r => { if (r.rowCount) console.log("[ANUNCIO] origem registrada para", userId, "|", (body.anuncio.titulo || "").slice(0, 60)); })
-        .catch(err => console.error("[ANUNCIO] erro ao gravar:", err.message));
-    }
+    // O anúncio é gravado DEPOIS do upsert, encadeado. Na primeira versão as duas
+    // queries saíam juntas e o UPDATE corria antes de o lead existir: casava zero
+    // linhas e sumia sem erro nenhum, com o webhook devolvendo 200.
+    // Só grava se ainda estiver vazio (IS NULL): um mesmo lead pode voltar por
+    // outro anúncio meses depois, e o que importa é o que trouxe ele para ESTA
+    // conversa. Sobrescrever faria a IA puxar assunto do anúncio errado.
+    upsertLead(userId, {})
+      .then(() => {
+        if (!body.anuncio) return;
+        const resumoAd = [body.anuncio.titulo, body.anuncio.corpo].filter(Boolean).join("\n");
+        return db.query(`UPDATE leads SET anuncio_origem = $2 WHERE phone = $1 AND anuncio_origem IS NULL`, [userId, resumoAd])
+          .then(r => { if (r.rowCount) console.log("[ANUNCIO] origem registrada para", userId, "|", (body.anuncio.titulo || "").slice(0, 60)); });
+      })
+      .catch(err => console.error("[WEBHOOK] upsertLead/anuncio erro:", err.message));
     enfileirarMensagem(userId, { content: body.text.message });
 
   } catch (err) {
