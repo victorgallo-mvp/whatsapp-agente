@@ -104,6 +104,11 @@ async function initDb() {
   // Em qual contagem de interação o resumo foi feito pela última vez — é o que
   // permite refazer a cada N mensagens, e não só a cada 24h.
   await db.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS resumo_ate_interacao INT DEFAULT 0`);
+  // Anúncio que originou o lead. Quem clica em "Enviar mensagem" num anúncio do
+  // Meta chega com o conteúdo do anúncio anexado à primeira mensagem, e 23% das
+  // conversas da TrailLand entram por aí. Sem guardar, a informação some depois
+  // do primeiro turno e o agente atende no escuro alguém que já disse o que quer.
+  await db.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS anuncio_origem TEXT`);
 
   // Migra dados existentes da tabela clientes
   await db.query(`
@@ -194,7 +199,7 @@ async function getHistory(userId) {
 
 async function getLead(phone) {
   const res = await db.query(
-    `SELECT nome, empresa, endereco, stage, profile, last_summary, total_interactions, olivia_ativa FROM leads WHERE phone = $1`,
+    `SELECT nome, empresa, endereco, stage, profile, last_summary, total_interactions, olivia_ativa, anuncio_origem FROM leads WHERE phone = $1`,
     [phone]
   );
   return res.rows[0] || null;
@@ -935,6 +940,25 @@ function parseWebhookBody(raw) {
   const audioMsg = msg.audioMessage;
 
   // Extração de texto — cobre mensagens diretas, encaminhadas e templates
+  // Anúncio de origem (click-to-WhatsApp). O Meta anexa o conteúdo do anúncio na
+// primeira mensagem, em contextInfo.externalAdReply: título, corpo e link do
+// post. É o que diz QUAL produto a pessoa estava vendo quando resolveu chamar.
+function extrairAnuncio(data, msg) {
+  const ci = data.contextInfo
+    || msg.extendedTextMessage?.contextInfo
+    || msg.imageMessage?.contextInfo
+    || null;
+  const ad = ci?.externalAdReply;
+  if (!ad) return null;
+  const titulo = (ad.title || "").trim();
+  const corpo  = (ad.body  || "").trim();
+  if (!titulo && !corpo) return null;
+  // O corpo do anúncio é peça de marketing e vem longo, com emoji e chamada.
+  // Cortar evita que ele domine o contexto e ainda preserva o que interessa,
+  // que é produto, preço e condição, sempre no começo.
+  return { titulo: titulo.slice(0, 200), corpo: corpo.slice(0, 900), url: ad.sourceUrl || "" };
+}
+
   const textoRaw = msg.conversation
     || msg.extendedTextMessage?.text
     || msg.ephemeralMessage?.message?.conversation
@@ -952,6 +976,7 @@ function parseWebhookBody(raw) {
     fromMe:      key.fromMe  || false,
     isGroup:     jid.endsWith("@g.us"),
     isForwarded: !!(data.contextInfo?.isForwarded || msg.extendedTextMessage?.contextInfo?.isForwarded),
+    anuncio:     extrairAnuncio(data, msg),
     text:        textoRaw ? { message: textoRaw } : null,
     image:       imageMsg ? { imageUrl: imageMsg.url, caption: imageMsg.caption || "" } : null,
     document:    docMsg   ? { documentUrl: docMsg.url, fileName: docMsg.fileName || "documento.pdf", caption: docMsg.caption || "" } : null,
@@ -1136,6 +1161,16 @@ app.post("/webhook", async (req, res) => {
     console.log("[" + userId + "] " + body.text.message);
     // Garante que o lead existe no banco imediatamente (antes de Olivia processar)
     upsertLead(userId, {}).catch(err => console.error("[WEBHOOK] upsertLead erro:", err.message));
+
+    // Grava o anúncio de origem só na primeira vez (IS NULL). Um mesmo lead pode
+    // voltar por outro anúncio meses depois; o que interessa é o que trouxe ele
+    // para esta conversa, e sobrescrever faria a IA falar do anúncio errado.
+    if (body.anuncio) {
+      const resumoAd = [body.anuncio.titulo, body.anuncio.corpo].filter(Boolean).join("\n");
+      db.query(`UPDATE leads SET anuncio_origem = $2 WHERE phone = $1 AND anuncio_origem IS NULL`, [userId, resumoAd])
+        .then(r => { if (r.rowCount) console.log("[ANUNCIO] origem registrada para", userId, "|", (body.anuncio.titulo || "").slice(0, 60)); })
+        .catch(err => console.error("[ANUNCIO] erro ao gravar:", err.message));
+    }
     enfileirarMensagem(userId, { content: body.text.message });
 
   } catch (err) {
@@ -1232,6 +1267,24 @@ function blocosDeContexto({ lead = null, knowledge = [], slots = null } = {}) {
     if (!p.fatos && lead.last_summary) ctx += `Resumo da conversa anterior: ${lead.last_summary}\n`;
     ctx += `Se o cliente mencionar assunto diferente do anterior, atenda normalmente — não force o contexto antigo.\n` +
            `</historico_cliente>`;
+  }
+
+  // Anúncio de origem. Vem antes de qualquer pergunta de triagem porque muda o
+  // primeiro turno inteiro: quem clicou no anúncio da 270 FI já disse o que
+  // quer, e receber um menu de categorias é retroceder. O conteúdo é peça de
+  // marketing, não catálogo — por isso a instrução explícita de não tratar
+  // preço de anúncio como preço válido.
+  if (lead?.anuncio_origem) {
+    ctx += `\n\n<origem_anuncio>\n` +
+           `Esta pessoa chegou clicando num anúncio. Era isto que ela estava vendo:\n` +
+           `${lead.anuncio_origem}\n\n` +
+           `Use para saber do que ela já estava interessada: não pergunte de novo o que ela procura, ` +
+           `nem ofereça o menu de categorias. Puxe o assunto do próprio anúncio.\n` +
+           `O texto acima é peça de publicidade, não é o catálogo. Preço, desconto e condição de pagamento ` +
+           `você responde SEMPRE pela tabela oficial, mesmo que o anúncio diga outro valor. ` +
+           `Se o cliente citar um preço ou condição do anúncio que não bate com a tabela, não confirme e não negue: ` +
+           `diga que confirma essa condição e retorna, e emita [CONSULTAR_TIME]. Anúncio desatualizado é problema conhecido aqui.\n` +
+           `</origem_anuncio>`;
   }
 
   if (slots && slots.length > 0) {
