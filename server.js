@@ -290,13 +290,20 @@ async function encaminharArteParaOperador(phone, rawMsg, caption) {
 }
 
 // ─── VISÃO: ANÁLISE DE IMAGENS COM CLAUDE ────────────────────────────────────
-async function analisarImagem(imageUrl) {
+// Recebe o rawMsg, NÃO a URL. A mídia do WhatsApp trafega criptografada: baixar
+// a url direto devolve bytes cifrados, que a API de visão rejeita. O resultado
+// era silencioso — a função devolvia null, a descrição ficava vazia e a IA
+// recebia só "[o cliente enviou uma imagem]", sem nada dentro. Rodou assim por
+// semanas: 37 imagens em produção, zero analisadas, nenhum erro no caminho.
+// Descriptografar é o que getBase64FromMediaMessage faz, e é o que os fluxos de
+// áudio e de relay já usavam.
+async function analisarImagem(rawMsg) {
   try {
-    const imgRes   = await axios.get(imageUrl, { responseType: "arraybuffer", timeout: 15000 });
-    const base64   = Buffer.from(imgRes.data).toString("base64");
-    const mediaType = (imgRes.headers["content-type"] || "image/jpeg").split(";")[0].trim();
+    const { base64, mimetype } = await obterBase64Midia(rawMsg);
+    if (!base64) { console.error("[VISION] getBase64FromMediaMessage nao devolveu base64"); return null; }
+    const mediaType = (mimetype || "image/jpeg").split(";")[0].trim();
     const tiposSuportados = ["image/jpeg", "image/png", "image/gif", "image/webp"];
-    if (!tiposSuportados.includes(mediaType)) return null;
+    if (!tiposSuportados.includes(mediaType)) { console.error("[VISION] tipo nao suportado:", mediaType); return null; }
 
     const res = await axios.post(
       "https://api.anthropic.com/v1/messages",
@@ -1131,12 +1138,18 @@ app.post("/webhook", async (req, res) => {
       }
 
       let descricao = "";
-      if (body.image.imageUrl) {
+      if (body.rawMsg) {
         console.log("[VISION] Analisando imagem de:", userId);
-        const analise = await analisarImagem(body.image.imageUrl);
+        const analise = await analisarImagem(body.rawMsg);
         if (analise) {
           descricao = " — análise: " + analise;
           console.log("[VISION] Resultado:", analise.substring(0, 100));
+        } else {
+          // Sem isso a IA recebe "[o cliente enviou uma imagem]" e responde como
+          // se soubesse o que era. Dizer que não conseguiu ver é o comportamento
+          // honesto, e o log avisa que a visão falhou.
+          descricao = " — não foi possível ler o conteúdo desta imagem";
+          console.error("[VISION] FALHOU para:", userId);
         }
       }
 
