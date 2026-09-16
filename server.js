@@ -778,11 +778,28 @@ function enfileirarMensagem(userId, item) {
   );
 }
 
+// Marca o prompt de sistema como cacheável. Ele é 97% dos tokens de entrada de
+// toda chamada (13 mil tokens, contra ~500 de histórico) e é idêntico entre
+// mensagens: só muda quando sai deploy. Sem isso a gente paga o preço cheio por
+// ele em cada mensagem de cada cliente.
+// A leitura do cache custa 10% e a escrita 125%, então compensa a partir da
+// segunda chamada dentro da janela. Como o mesmo prompt serve todos os leads em
+// atendimento, na prática é quase sempre leitura.
+// O campo system precisa virar array de blocos para aceitar cache_control; em
+// string simples a API ignora silenciosamente e continua cobrando cheio.
+function comCachePrompt(payload) {
+  if (!payload?.system || typeof payload.system !== "string") return payload;
+  return {
+    ...payload,
+    system: [{ type: "text", text: payload.system, cache_control: { type: "ephemeral" } }],
+  };
+}
+
 async function chamarClaude(payload, tentativa = 1) {
   try {
-    return await axios.post(
+    const r = await axios.post(
       "https://api.anthropic.com/v1/messages",
-      payload,
+      comCachePrompt(payload),
       {
         headers: {
           "x-api-key":         ANTHROPIC_API_KEY,
@@ -791,6 +808,17 @@ async function chamarClaude(payload, tentativa = 1) {
         },
       }
     );
+    // Sem esse log não há como saber se o cache está pegando: a API não
+    // reclama quando o cache_control é ignorado, ela só cobra o preço cheio.
+    // "leu" alto e "escreveu" zero é o estado saudável.
+    const u = r.data?.usage;
+    if (u) {
+      console.log("[TOKENS] entrada:", u.input_tokens,
+                  "| escreveu cache:", u.cache_creation_input_tokens ?? 0,
+                  "| leu cache:", u.cache_read_input_tokens ?? 0,
+                  "| saida:", u.output_tokens);
+    }
+    return r;
   } catch (err) {
     const tipo = err.response?.data?.error?.type;
     if (tipo === "overloaded_error" && tentativa < 4) {
