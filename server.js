@@ -1603,7 +1603,9 @@ async function verificarGatilhos(reply, userId) {
     await db.query(`UPDATE leads SET olivia_ativa = FALSE WHERE phone = $1`, [userId]);
     await notificarResponsavel(
       `${AGENTE} solicitou suporte — ` + nome,
-      `${AGENTE} identificou que esse atendimento precisa de um consultor.\n\nCliente: ${nome}\nTelefone: ${telefone}\nAbrir conversa: https://wa.me/${foneWA}\n\n${AGENTE} foi desativada para esse chat. Reative quando concluir o atendimento.`
+      `${AGENTE} identificou que esse atendimento precisa de um consultor.\n\nCliente: ${nome}\nTelefone: ${telefone}\n` +
+      (linha.match(/Cidade: ([^|]+)/)?.[1]?.trim() && !/não informad/i.test(linha.match(/Cidade: ([^|]+)/)[1]) ? `Cidade: ${linha.match(/Cidade: ([^|]+)/)[1].trim()}\n` : "") +
+      `Abrir conversa: https://wa.me/${foneWA}\n\n${AGENTE} foi desativada para esse chat. Reative quando concluir o atendimento.`
     );
     console.log("[PRECISA_SUPORTE] Olivia desativada para:", userId);
   }
@@ -1622,6 +1624,10 @@ async function verificarGatilhos(reply, userId) {
     const nome       = linha.match(/Nome: ([^|]+)/)?.[1]?.trim()       || "Cliente";
     const telefone   = linha.match(/Telefone: ([^|]+)/)?.[1]?.trim()   || userId;
     const produto    = linha.match(/Produto: ([^|]+)/)?.[1]?.trim()    || "não informado";
+    // A IA não pede mais telefone (já temos, é o próprio WhatsApp) e passou a
+    // perguntar a cidade, que decide o que o consultor trata: perto convida pra
+    // loja, longe precisa de frete.
+    const cidade     = linha.match(/Cidade: ([^|]+)/)?.[1]?.trim()     || "";
     const estimativa = linha.match(/Estimativa: ([^|]+)/)?.[1]?.trim() || "";
     const observacao = linha.match(/Observacao: ([^|]+)/)?.[1]?.trim() || "";
     const foneWA     = formatarTelefoneWA(telefone);
@@ -1633,6 +1639,7 @@ async function verificarGatilhos(reply, userId) {
       `Cliente com intenção de compra. Assuma a conversa para tratar reserva, sinal, prazo e pagamento.\n\n` +
       `Nome: ${nome}\n` +
       `Telefone: ${telefone}\n` +
+      (cidade && !/não informad/i.test(cidade) ? `Cidade: ${cidade}\n` : "") +
       `Interesse: ${produto}\n` +
       (estimativa ? `Valor de tabela: ${estimativa}\n` : "") +
       (observacao ? `Contexto: ${observacao}\n` : "") +
@@ -1731,6 +1738,7 @@ async function verificarGatilhos(reply, userId) {
     const linha    = reply.match(/\[CONSULTAR_TIME\](.*)/)?.[1]?.trim() || "";
     const nome     = linha.match(/Cliente: ([^|]+)/)?.[1]?.trim()  || "Cliente";
     const telefone = linha.match(/Telefone: ([^|]+)/)?.[1]?.trim() || userId;
+    const cidade   = linha.match(/Cidade: ([^|]+)/)?.[1]?.trim()   || "";
     const modelo   = linha.match(/Modelo: ([^|]+)/)?.[1]?.trim()   || "não informado";
     const pergunta = linha.match(/Pergunta: ([^|]+)/)?.[1]?.trim() || "não especificada";
     const foneWA   = formatarTelefoneWA(telefone);
@@ -1742,6 +1750,7 @@ async function verificarGatilhos(reply, userId) {
       `A ${AGENTE} não tinha essa informação e prometeu retorno ao cliente. Assuma a conversa.\n\n` +
       `Cliente: ${nome}\n` +
       `Telefone: ${telefone}\n` +
+      (cidade && !/não informad/i.test(cidade) ? `Cidade: ${cidade}\n` : "") +
       `Modelo: ${modelo}\n` +
       `O que ele perguntou: ${pergunta}\n\n` +
       `Abrir conversa: https://wa.me/${foneWA}\n\n` +
