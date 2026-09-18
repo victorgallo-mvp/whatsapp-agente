@@ -883,11 +883,12 @@ async function processarMensagensPendentes(userId) {
       console.log("[CALENDAR] Slots injetados:", slots.map(s => s.data + " " + s.horarios.join("/")).join(" | "));
     }
 
-    const sistema = promptComData(AGENT_CONFIG.instructions, { lead, knowledge, slots });
+    const blocos  = promptEmBlocos(AGENT_CONFIG.instructions, { lead, knowledge, slots });
+    const sistema = blocos.map(b => b.text).join("");   // conferirPrecos precisa do texto
     const { texto: reply } = await gerarRespostaValidada({
       model:      "claude-sonnet-4-6",
       max_tokens: 1000,
-      system:     sistema,
+      system:     blocos,
       messages:   mensagensComData(historico),
     }, sistema);
     if (!reply) return;
@@ -1348,15 +1349,36 @@ function blocosDeContexto({ lead = null, knowledge = [], slots = null } = {}) {
 // críticas do cliente são repetidas no fim porque em conversa longa o modelo
 // afrouxa as instruções do começo — e as duas que mais falharam nos testes
 // (inventar spec e cotar a variante errada) são justamente as caras.
-function promptComData(instrucoes = AGENT_CONFIG.instructions, contexto = {}, regrasCriticas = AGENT_CONFIG.regrasCriticas) {
+// Divide o system em dois blocos: o ESTÁTICO (data do dia + instruções do
+// agente), idêntico para todos os clientes, e o DINÂMICO (contexto do lead,
+// conhecimento recuperado, lembretes), que muda a cada mensagem.
+//
+// A divisão existe por causa do cache. Na primeira versão eu marquei o prompt
+// inteiro como um bloco único com cache_control, e o cache nunca acertou: a
+// chave é o conteúdo do bloco, e o bloco terminava com o perfil do lead. Dois
+// clientes diferentes = dois blocos diferentes = zero reuso. O prompt é
+// idêntico até o caractere 38.098 de 38.164, e era esse 0,2% final que
+// invalidava os 13 mil tokens anteriores.
+//
+// A ordem do texto continua exatamente a mesma de antes: só a fronteira de
+// cache passou a existir entre as instruções e o contexto.
+function promptEmBlocos(instrucoes = AGENT_CONFIG.instructions, contexto = {}, regrasCriticas = AGENT_CONFIG.regrasCriticas) {
   const d = dataAtualStr();
-  let prompt = `DATA DE HOJE: ${d}. Nunca use datas anteriores a esta. Calcule sempre a partir desta data.\n\n` +
-               instrucoes +
-               blocosDeContexto(contexto) +
-               `\n\n<lembretes>\nHoje é ${d}. Qualquer data deve ser calculada a partir daqui.`;
-  if (regrasCriticas) prompt += `\n${regrasCriticas}`;
-  prompt += `\n</lembretes>`;
-  return prompt;
+  const estatico = `DATA DE HOJE: ${d}. Nunca use datas anteriores a esta. Calcule sempre a partir desta data.\n\n` + instrucoes;
+  let dinamico = blocosDeContexto(contexto) +
+                 `\n\n<lembretes>\nHoje é ${d}. Qualquer data deve ser calculada a partir daqui.`;
+  if (regrasCriticas) dinamico += `\n${regrasCriticas}`;
+  dinamico += `\n</lembretes>`;
+  return [
+    { type: "text", text: estatico, cache_control: { type: "ephemeral" } },
+    { type: "text", text: dinamico },
+  ];
+}
+
+// Mesmo prompt, como string única. Usado onde é preciso inspecionar o texto,
+// como em conferirPrecos, que varre a tabela de preços atrás de valor inventado.
+function promptComData(instrucoes = AGENT_CONFIG.instructions, contexto = {}, regrasCriticas = AGENT_CONFIG.regrasCriticas) {
+  return promptEmBlocos(instrucoes, contexto, regrasCriticas).map(b => b.text).join("");
 }
 
 // Só o diálogo. Contexto de negócio e de cliente saíram daqui de propósito.
@@ -2130,7 +2152,7 @@ app.post("/api/leads/iniciar", async (req, res) => {
       const response = await chamarClaude({
         model:      "claude-sonnet-4-6",
         max_tokens: 300,
-        system:     promptComData(AGENT_CONFIG.instructions, { lead: leadCtx }),
+        system:     promptEmBlocos(AGENT_CONFIG.instructions, { lead: leadCtx }),
         messages:   msgs,
       });
       mensagemAbertura = response.data.content?.[0]?.text?.trim() || null;
@@ -2547,11 +2569,12 @@ app.post("/admin/playground/chat", async (req, res) => {
     const knowledge = await buscarConhecimento(queryRAG, 4, 0.35, kbId);
 
     // Mesmo caminho da produção, pra que o teste reflita o comportamento real.
-    const sistema = promptComData(clientConfig.instructions, { knowledge }, clientConfig.regrasCriticas);
+    const blocosPg = promptEmBlocos(clientConfig.instructions, { knowledge }, clientConfig.regrasCriticas);
+    const sistema  = blocosPg.map(b => b.text).join("");
     const response = (await gerarRespostaValidada({
       model:      "claude-sonnet-4-6",
       max_tokens: 1000,
-      system:     sistema,
+      system:     blocosPg,
       messages:   mensagensComData(history),
     }, sistema)).resposta;
 
