@@ -856,6 +856,17 @@ async function processarMensagensPendentes(userId) {
     const KEYWORDS_AGENDA = ["visita", "horário", "horario", "agendar", "disponível", "disponivel", "agenda", "data"];
     const ehAgendamento   = KEYWORDS_AGENDA.some(k => mensagemAtual.toLowerCase().includes(k));
 
+    // A checagem de pausa vem ANTES do RAG de propósito. Estava depois, e como a
+    // maior parte das conversas está com um vendedor humano, a gente gerava o
+    // embedding no Voyage e rodava a busca vetorial para descartar tudo na linha
+    // seguinte. A mensagem do cliente continua sendo gravada acima, que é o que
+    // importa para o histórico quando a IA voltar.
+    const lead = await getLead(userId);
+    if (lead?.olivia_ativa === false) {
+      console.log("[OLIVIA] Desativada para:", userId);
+      return;
+    }
+
     // getHistory já traz a mensagem atual (foi gravada logo acima), então a
     // query sai daqui direto — antes ela era concatenada de novo, duplicando a
     // mensagem e deixando só UMA anterior de contexto real.
@@ -865,16 +876,10 @@ async function processarMensagensPendentes(userId) {
     const queryText = montarQueryRAG(historico, 3, assunto);
     if (assunto) console.log("[RAG] assunto da conversa:", assunto);
 
-    const [lead, knowledge, slots] = await Promise.all([
-      getLead(userId),
+    const [knowledge, slots] = await Promise.all([
       buscarConhecimento(queryText, 4, 0.35, KB_ID),
       ehAgendamento ? buscarSlotsDisponiveis(5) : Promise.resolve(null),
     ]);
-
-    if (lead?.olivia_ativa === false) {
-      console.log("[OLIVIA] Desativada para:", userId);
-      return;
-    }
 
     if (knowledge.length > 0) {
       console.log("[RAG] " + knowledge.length + " resultado(s) para:", queryText.substring(0, 60));
@@ -1027,6 +1032,11 @@ function parseWebhookBody(raw) {
 }
 
 app.post("/webhook", async (req, res) => {
+  // Responde o 200 imediatamente e processa depois: o Evolution reenvia o
+  // webhook se demorar, e transcrever áudio ou chamar o modelo leva segundos.
+  // Como a resposta já saiu aqui, NENHUM ponto abaixo pode mexer em `res` —
+  // fazer isso lança "Cannot set headers after they are sent" e cai no catch
+  // genérico, que loga um erro falso e esconde o de verdade.
   res.sendStatus(200);
   try {
     // Log completo do payload para diagnóstico
@@ -1121,11 +1131,25 @@ app.post("/webhook", async (req, res) => {
       }
     }
 
+    // Toda resposta automática daqui para baixo passa por aqui. Os caminhos de
+    // mídia não suportada e de falha de transcrição mandavam "Recebido, nosso
+    // consultor entrará em contato" sem olhar se a IA estava pausada: se o
+    // vendedor já tinha assumido a conversa, o bot falava por cima dele, que é
+    // exatamente o que a trava de pausa existe para impedir.
+    const avisarSeAtiva = async (texto) => {
+      const l = await getLead(body.phone).catch(() => null);
+      if (l?.olivia_ativa === false) {
+        console.log("[WEBHOOK] IA pausada — aviso automático suprimido para:", body.phone);
+        return;
+      }
+      await sendZAPIMessage(body.phone, texto);
+    };
+
     // Áudio: tenta transcrever com Groq Whisper
     if (body.audio && body.rawMsg) {
       if (!GROQ_API_KEY) {
         console.warn("[AUDIO] GROQ_API_KEY não configurada — áudio ignorado.");
-        return res.sendStatus(200);
+        return;
       }
       try {
         console.log("[AUDIO] Transcrevendo áudio de:", body.phone);
@@ -1136,7 +1160,7 @@ app.post("/webhook", async (req, res) => {
         enfileirarMensagem(body.phone, { content: transcricao });
       } catch (err) {
         console.error("[AUDIO] Falha na transcrição:", err.response?.data || err.message);
-        await sendZAPIMessage(body.phone, "Recebido, nosso consultor entrará em contato em breve.");
+        await avisarSeAtiva("Recebido, nosso consultor entrará em contato em breve.");
         if (NOTIFICACOES.whatsapp_responsavel !== "PREENCHA_AQUI") {
           await sendZAPIMessage(
             NOTIFICACOES.whatsapp_responsavel,
@@ -1144,15 +1168,15 @@ app.post("/webhook", async (req, res) => {
           ).catch(() => {});
         }
       }
-      return res.sendStatus(200);
+      return;
     }
 
     // Outras mídias não suportadas (vídeo, sticker, contato, localização)
     if (body.video || body.sticker || body.contact || body.location || body.audio) {
       const tipo = body.video ? "video" : body.sticker ? "sticker" : body.contact ? "contact" : body.location ? "location" : "audio";
       console.log("[WEBHOOK] Midia nao suportada:", tipo);
-      await sendZAPIMessage(body.phone, "Recebido, nosso consultor entrará em contato em breve.");
-      return res.sendStatus(200);
+      await avisarSeAtiva("Recebido, nosso consultor entrará em contato em breve.");
+      return;
     }
 
     const userId = body.phone;
