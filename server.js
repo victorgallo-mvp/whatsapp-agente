@@ -791,7 +791,7 @@ function comCachePrompt(payload) {
   if (!payload?.system || typeof payload.system !== "string") return payload;
   return {
     ...payload,
-    system: [{ type: "text", text: payload.system, cache_control: { type: "ephemeral" } }],
+    system: [{ type: "text", text: payload.system, cache_control: { type: "ephemeral", ttl: "1h" } }],
   };
 }
 
@@ -813,8 +813,12 @@ async function chamarClaude(payload, tentativa = 1) {
     // "leu" alto e "escreveu" zero é o estado saudável.
     const u = r.data?.usage;
     if (u) {
+      // O detalhamento por TTL confirma que a entrada foi gravada como 1h e não
+      // como 5min: sem ele, "escreveu cache" sozinho não diz qual janela valeu.
+      const cc = u.cache_creation || {};
+      const janela = cc.ephemeral_1h_input_tokens ? " (1h)" : cc.ephemeral_5m_input_tokens ? " (5min)" : "";
       console.log("[TOKENS] entrada:", u.input_tokens,
-                  "| escreveu cache:", u.cache_creation_input_tokens ?? 0,
+                  "| escreveu cache:", (u.cache_creation_input_tokens ?? 0) + janela,
                   "| leu cache:", u.cache_read_input_tokens ?? 0,
                   "| saida:", u.output_tokens);
     }
@@ -1394,7 +1398,14 @@ function promptEmBlocos(instrucoes = AGENT_CONFIG.instructions, contexto = {}, r
   if (regrasCriticas) dinamico += `\n${regrasCriticas}`;
   dinamico += `\n</lembretes>`;
   return [
-    { type: "text", text: estatico, cache_control: { type: "ephemeral" } },
+    // ttl "1h" em vez do padrão de 5 min. O tráfego da loja é espalhado: com a
+    // janela de 5 minutos, boa parte das chamadas chegava depois da expiração e
+    // virava escrita (1,25x) em vez de leitura (0,1x). A escrita de 1h custa 2x,
+    // mas amortiza ao longo do dia — medido nos 5 dias anteriores, cai de 13
+    // escritas para 3 num dia de 54 atendimentos.
+    // Contrapartida: em dia fraco (menos de ~8 respostas) o 1h sai mais caro que
+    // o 5min, porque a escrita dobrada não se paga. No saldo compensa.
+    { type: "text", text: estatico, cache_control: { type: "ephemeral", ttl: "1h" } },
     { type: "text", text: dinamico },
   ];
 }
