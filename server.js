@@ -2228,6 +2228,10 @@ app.get("/api/leads", async (req, res) => {
     const result = await db.query(
       `SELECT l.phone, l.nome, l.empresa, l.stage, l.olivia_ativa,
               l.last_interaction_at, l.total_interactions,
+              -- origem do lead: o anúncio que a pessoa clicou, quando veio de
+              -- click-to-WhatsApp. Estava sendo gravado e nunca exposto, então
+              -- não havia como medir quanto do movimento vem de tráfego pago.
+              LEFT(l.anuncio_origem, 160) AS anuncio_origem,
               l.profile, l.last_summary,
               m.content AS ultima_mensagem, m.role AS ultima_role
        FROM leads l
