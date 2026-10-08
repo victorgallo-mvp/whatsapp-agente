@@ -109,6 +109,13 @@ async function initDb() {
   // conversas da TrailLand entram por aí. Sem guardar, a informação some depois
   // do primeiro turno e o agente atende no escuro alguém que já disse o que quer.
   await db.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS anuncio_origem TEXT`);
+  // Identificadores de atribuição do clique. Separados do texto de propósito:
+  // o texto serve para humano ler, o id e o ctwa_clid servem para cruzar com o
+  // Meta e chegar em custo por lead por anúncio.
+  await db.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS anuncio_id TEXT`);
+  await db.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS anuncio_ctwa_clid TEXT`);
+  await db.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS anuncio_url TEXT`);
+  await db.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS anuncio_fonte TEXT`);
 
   // Migra dados existentes da tabela clientes
   await db.query(`
@@ -983,11 +990,24 @@ function extrairAnuncio(data, msg) {
   if (!ad) return null;
   const titulo = (ad.title || "").trim();
   const corpo  = (ad.body  || "").trim();
-  if (!titulo && !corpo) return null;
+  // sourceId e ctwaClid são o que permite ligar o lead ao anúncio no Meta e
+  // calcular custo por lead. O texto do anúncio identifica para humano ler, mas
+  // não casa com nada do outro lado. Vinham no payload desde sempre e estavam
+  // sendo descartados.
+  const id   = String(ad.sourceId || "").trim();
+  const clid = String(ad.ctwaClid || ci.ctwaClid || "").trim();
+  if (!titulo && !corpo && !id && !clid) return null;
   // O corpo do anúncio é peça de marketing e vem longo, com emoji e chamada.
   // Cortar evita que ele domine o contexto e ainda preserva o que interessa,
   // que é produto, preço e condição, sempre no começo.
-  return { titulo: titulo.slice(0, 200), corpo: corpo.slice(0, 900), url: ad.sourceUrl || "" };
+  return {
+    titulo: titulo.slice(0, 200),
+    corpo:  corpo.slice(0, 900),
+    url:    (ad.sourceUrl || "").slice(0, 300),
+    id,
+    clid:   clid.slice(0, 255),
+    fonte:  (ci.conversionSource || ad.sourceType || "").slice(0, 40),
+  };
 }
 
 function parseWebhookBody(raw) {
@@ -1140,6 +1160,31 @@ app.post("/webhook", async (req, res) => {
     // consultor entrará em contato" sem olhar se a IA estava pausada: se o
     // vendedor já tinha assumido a conversa, o bot falava por cima dele, que é
     // exatamente o que a trava de pausa existe para impedir.
+    // Gravação do anúncio ANTES de qualquer ramo. Estava dentro do ramo de
+    // texto, depois de quatro `return` (áudio, mídia, imagem, sem-texto), e o
+    // clique de anúncio frequentemente chega numa mensagem SEM corpo de texto:
+    // messageType "conversation" com message vazio e o externalAdReply no
+    // contextInfo. Essa mensagem era descartada e a atribuição ia junto.
+    // Medido: 6 cliques de anúncio entre 21/09 e 04/10 chegaram assim, e os dois
+    // leads foram atendidos (67 e 35 mensagens) com anuncio_origem vazio.
+    // Só grava se ainda estiver vazio: o que importa é o anúncio que trouxe a
+    // pessoa para ESTA conversa.
+    if (body.anuncio) {
+      const a = body.anuncio;
+      const resumoAd = [a.titulo, a.corpo].filter(Boolean).join("\n");
+      upsertLead(body.phone, {})
+        .then(() => db.query(
+          `UPDATE leads SET anuncio_origem = COALESCE(anuncio_origem, $2),
+                            anuncio_id = COALESCE(anuncio_id, $3),
+                            anuncio_ctwa_clid = COALESCE(anuncio_ctwa_clid, $4),
+                            anuncio_url = COALESCE(anuncio_url, $5),
+                            anuncio_fonte = COALESCE(anuncio_fonte, $6)
+             WHERE phone = $1 AND anuncio_id IS NULL AND anuncio_origem IS NULL`,
+          [body.phone, resumoAd || null, a.id || null, a.clid || null, a.url || null, a.fonte || null]))
+        .then(r => { if (r?.rowCount) console.log("[ANUNCIO] registrado para", body.phone, "| id:", a.id || "-", "| clid:", a.clid ? "sim" : "-"); })
+        .catch(err => console.error("[ANUNCIO] erro ao gravar:", err.message));
+    }
+
     const avisarSeAtiva = async (texto) => {
       const l = await getLead(body.phone).catch(() => null);
       if (l?.olivia_ativa === false) {
@@ -1231,20 +1276,7 @@ app.post("/webhook", async (req, res) => {
 
     console.log("[" + userId + "] " + body.text.message);
     // Garante que o lead existe no banco imediatamente (antes de Olivia processar)
-    // O anúncio é gravado DEPOIS do upsert, encadeado. Na primeira versão as duas
-    // queries saíam juntas e o UPDATE corria antes de o lead existir: casava zero
-    // linhas e sumia sem erro nenhum, com o webhook devolvendo 200.
-    // Só grava se ainda estiver vazio (IS NULL): um mesmo lead pode voltar por
-    // outro anúncio meses depois, e o que importa é o que trouxe ele para ESTA
-    // conversa. Sobrescrever faria a IA puxar assunto do anúncio errado.
-    upsertLead(userId, {})
-      .then(() => {
-        if (!body.anuncio) return;
-        const resumoAd = [body.anuncio.titulo, body.anuncio.corpo].filter(Boolean).join("\n");
-        return db.query(`UPDATE leads SET anuncio_origem = $2 WHERE phone = $1 AND anuncio_origem IS NULL`, [userId, resumoAd])
-          .then(r => { if (r.rowCount) console.log("[ANUNCIO] origem registrada para", userId, "|", (body.anuncio.titulo || "").slice(0, 60)); });
-      })
-      .catch(err => console.error("[WEBHOOK] upsertLead/anuncio erro:", err.message));
+    upsertLead(userId, {}).catch(err => console.error("[WEBHOOK] upsertLead erro:", err.message));
     enfileirarMensagem(userId, { content: body.text.message });
 
   } catch (err) {
@@ -2232,6 +2264,7 @@ app.get("/api/leads", async (req, res) => {
               -- click-to-WhatsApp. Estava sendo gravado e nunca exposto, então
               -- não havia como medir quanto do movimento vem de tráfego pago.
               LEFT(l.anuncio_origem, 160) AS anuncio_origem,
+              l.anuncio_id, l.anuncio_ctwa_clid, l.anuncio_url, l.anuncio_fonte,
               l.profile, l.last_summary,
               m.content AS ultima_mensagem, m.role AS ultima_role
        FROM leads l
