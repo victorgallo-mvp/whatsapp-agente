@@ -2408,6 +2408,42 @@ app.delete("/admin/knowledge", async (req, res) => {
   }
 });
 
+// Preenche a atribuição de anúncio em leads antigos, a partir do que está
+// guardado no banco do Evolution. Existe porque a captura só começou em 08/09 e,
+// pior, perdia o clique quando ele vinha numa mensagem sem corpo de texto — o
+// que era a maioria. Os identificadores nunca deixaram de chegar: estavam em
+// contextInfo.externalAdReply e eram descartados.
+//
+// Preenche SÓ campo vazio (COALESCE + guarda no WHERE), então rodar duas vezes
+// não sobrescreve nada e nunca atropela dado capturado ao vivo.
+app.post("/admin/anuncios/retroativo", async (req, res) => {
+  const registros = req.body?.registros;
+  if (!Array.isArray(registros) || !registros.length) {
+    return res.status(400).json({ error: "envie { registros: [{ phone, id, clid, url, texto, fonte }] }" });
+  }
+  let atualizados = 0, semLead = 0, erros = 0;
+  for (const r of registros) {
+    const phone = sanitizePhone(r.phone);
+    if (!phone) { semLead++; continue; }
+    try {
+      const q = await db.query(
+        `UPDATE leads
+            SET anuncio_origem    = COALESCE(anuncio_origem, $2),
+                anuncio_id        = COALESCE(anuncio_id, $3),
+                anuncio_ctwa_clid = COALESCE(anuncio_ctwa_clid, $4),
+                anuncio_url       = COALESCE(anuncio_url, $5),
+                anuncio_fonte     = COALESCE(anuncio_fonte, $6)
+          WHERE phone = $1
+            AND (anuncio_id IS NULL OR anuncio_origem IS NULL)`,
+        [phone, r.texto || null, r.id || null, r.clid || null, r.url || null, r.fonte || null]
+      );
+      if (q.rowCount) atualizados++; else semLead++;
+    } catch (err) { erros++; console.error("[RETROATIVO] erro em", phone, err.message); }
+  }
+  console.log("[RETROATIVO] recebidos:", registros.length, "| atualizados:", atualizados, "| sem lead ou já preenchido:", semLead, "| erros:", erros);
+  res.json({ recebidos: registros.length, atualizados, sem_lead_ou_ja_preenchido: semLead, erros });
+});
+
 // ─── ADMIN: DIAGNÓSTICO DO RAG ───────────────────────────────────────────────
 // Roda exatamente a mesma busca que a Olivia usa em tempo real, pra auditar
 // o que seria recuperado para uma mensagem qualquer — sem precisar simular
