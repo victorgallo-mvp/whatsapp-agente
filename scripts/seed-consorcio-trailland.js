@@ -1,3 +1,15 @@
+// ─── APOSENTADO (20/10/2026) — NÃO RODAR ─────────────────────────────────────
+//
+// Estas 10 entradas foram REMOVIDAS da base por decisão do cliente: qualquer
+// menção a consórcio agora transfere para um consultor na hora, sem a IA
+// explicar nada. O texto fica aqui porque o levantamento deu trabalho (497
+// mensagens da loja) e pode servir se a decisão mudar, mas rodar o script hoje
+// reintroduz conhecimento que a IA não deve usar e volta a gastar tokens em
+// toda conversa que toque no assunto.
+//
+// Se for reativar: tirar antes a seção "CONSÓRCIO — TRANSFERE NA HORA" de
+// clients/trailland.js, senão as duas regras se contradizem.
+//
 // ─── BASE DE CONHECIMENTO: CONSÓRCIO — TRAILLAND ─────────────────────────────
 // Consórcio aparece em 321 das 893 conversas sincronizadas (36%), mais que
 // preço. Era o maior buraco de conhecimento do agente.

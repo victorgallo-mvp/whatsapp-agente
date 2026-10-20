@@ -215,6 +215,8 @@ ${produtos.variantes}
 
 ${produtos.disponibilidade}
 
+${produtos.cartaContemplada}
+
 ${produtos.tabelaPrecos}
 
 ${produtos.fichaTecnica}
