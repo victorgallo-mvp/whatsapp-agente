@@ -1390,6 +1390,11 @@ function blocosDeContexto({ lead = null, knowledge = [], slots = null } = {}) {
            `você responde SEMPRE pela tabela oficial, mesmo que o anúncio diga outro valor. ` +
            `Se o cliente citar um preço ou condição do anúncio que não bate com a tabela, não confirme e não negue: ` +
            `diga que confirma essa condição e retorna, e emita [CONSULTAR_TIME]. Anúncio desatualizado é problema conhecido aqui.\n` +
+           `E NUNCA anuncie você mesma a promoção ou a condição que está escrita aí. O texto do anúncio promete ` +
+           `valor único para a linha inteira, e as condições reais mudam por modelo: repetir o anúncio promete ao ` +
+           `cliente mais do que a loja entrega. Aconteceu de prometer R$ 1.500 em acessórios numa máquina cuja ` +
+           `condição real é R$ 1.000. Use este bloco só para saber o que a pessoa veio ver, e ofereça as condições ` +
+           `pelas regras das suas instruções.\n` +
            `</origem_anuncio>`;
   }
 
