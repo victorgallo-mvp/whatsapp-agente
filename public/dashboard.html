@@ -3,29 +3,55 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@400;500;700;900&display=swap" rel="stylesheet">
 <title>Painel Olivia</title>
 <style>
+  /* ─── MARCA FEELING ──────────────────────────────────────────────────────
+     Paleta oficial: verde #04D81A (destaque), preto e branco (base). O manual
+     diz "cor com função, sem porcentagem fixa" e "verde concentrado nos pontos
+     de atenção" — por isso o verde aqui só aparece em marca, foco e ação, nunca
+     como fundo de área grande.
+     Tipografia: Big Shoulders Display nos títulos, Proxima Nova no texto. A
+     Proxima Nova é licenciada e não existe no Google Fonts: uso a pilha do
+     sistema, que é o substituto honesto. Trocar por ela é só mexer em --fonte-texto
+     se a licença estiver disponível no servidor.
+     O manual não cobre web ("aplicações web não integram esta versão"), então
+     isto é adaptação das regras de impresso e social, não aplicação literal. */
   :root {
-    --cyan:     #00AEEF;
-    --cyan-dk:  #0092C8;
-    --cyan-lt:  #EBF8FF;
-    --dark:     #1C1C1E;
-    --dark2:    #374151;
-    --surface:  #F7F8FA;
-    --border:   #E4E7EC;
-    --text:     #111827;
-    --muted:    #6B7280;
-    --muted2:   #9CA3AF;
+    --verde:    #04D81A;
+    --verde-dk: #03A814;
+    --verde-lt: rgba(4, 216, 26, .12);
+    --preto:    #000000;
+    --surface:  #0A0A0A;
+    --card:     #141414;
+    --card2:    #1C1C1C;
+    --border:   #262626;
+    --text:     #FFFFFF;
+    --muted:    #A3A3A3;
+    --muted2:   #737373;
     --white:    #FFFFFF;
-    --red:      #DC2626;
-    --red-lt:   #FEF2F2;
-    --amber:    #B45309;
-    --amber-lt: #FFF7ED;
-    --green:    #15803D;
-    --green-lt: #F0FDF4;
+    --red:      #F05252;
+    --red-lt:   rgba(240, 82, 82, .12);
+    --amber:    #F5A524;
+    --amber-lt: rgba(245, 165, 36, .12);
+    --fonte-titulo: "Big Shoulders Display", "Arial Narrow", sans-serif;
+    --fonte-texto:  -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+
+    /* nomes antigos mantidos para não quebrar as ~80 referências espalhadas no
+       arquivo; apontam para a paleta nova */
+    --cyan:     #04D81A;
+    --cyan-dk:  #03A814;
+    --cyan-lt:  rgba(4, 216, 26, .12);
+    --dark:     #FFFFFF;
+    --dark2:    #D4D4D4;
+    --green:    #04D81A;
+    --green-lt: rgba(4, 216, 26, .12);
   }
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   body {
+    font-family: var(--fonte-texto);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     background: var(--surface);
     height: 100vh;
@@ -56,7 +82,7 @@
 
   /* ─── TOOLBAR ────────────────────────── */
   .toolbar {
-    padding: 9px 16px; background: var(--white);
+    padding: 9px 16px; background: var(--card);
     border-bottom: 1px solid var(--border);
     display: flex; align-items: center; gap: 10px; flex-shrink: 0;
   }
@@ -66,7 +92,7 @@
     border-radius: 7px; font-size: 13px; outline: none;
     background: var(--surface); transition: border-color .15s;
   }
-  .toolbar input:focus { border-color: var(--cyan); background: var(--white); }
+  .toolbar input:focus { border-color: var(--cyan); background: var(--card); }
   .novo-lead-btn {
     padding: 6px 14px; background: var(--cyan); color: #fff;
     border: none; border-radius: 7px; font-size: 12.5px; font-weight: 700;
@@ -85,22 +111,25 @@
   .kanban-col {
     flex: 1; min-width: 210px; max-width: 300px;
     display: flex; flex-direction: column;
-    background: var(--white); border-radius: 11px;
+    background: var(--card); border-radius: 11px;
     border: 1px solid var(--border); overflow: hidden;
-    box-shadow: 0 1px 4px rgba(0,0,0,.05);
+    border: 1px solid var(--border);
   }
   .col-header {
     padding: 9px 13px; display: flex; align-items: center;
     justify-content: space-between; border-bottom: 1px solid var(--border); flex-shrink: 0;
   }
-  .col-title { font-size: 10.5px; font-weight: 800; letter-spacing: .6px; text-transform: uppercase; }
+  .col-title { font-family: var(--fonte-titulo); font-size: 13px; font-weight: 900; letter-spacing: .8px; text-transform: uppercase; }
   .col-count {
     font-size: 10.5px; font-weight: 700; padding: 1px 8px;
     border-radius: 999px; min-width: 22px; text-align: center;
   }
-  .col-header.h-novo          { background: #F9FAFB; }
+  /* Card com barra verde à esquerda: é a assinatura visual do manual, repetida
+     em quase toda página dele. */
+  .kanban-col { border-left: 3px solid var(--verde); }
+  .col-header.h-novo          { background: var(--card2); }
   .col-header.h-novo .col-title   { color: var(--dark2); }
-  .col-header.h-novo .col-count   { background: #E5E7EB; color: var(--dark2); }
+  .col-header.h-novo .col-count   { background: var(--border); color: var(--dark2); }
   .col-header.h-atend         { background: var(--cyan-lt); }
   .col-header.h-atend .col-title  { color: var(--cyan-dk); }
   .col-header.h-atend .col-count  { background: var(--cyan); color: #fff; }
@@ -119,18 +148,18 @@
 
   /* ─── CARD ───────────────────────────── */
   .card {
-    background: var(--white); border: 1px solid var(--border);
+    background: var(--card); border: 1px solid var(--border);
     border-radius: 9px; padding: 9px 11px; cursor: pointer;
     border-left: 3px solid transparent;
     transition: box-shadow .12s, border-color .12s, background .12s;
   }
-  .card:hover { box-shadow: 0 2px 8px rgba(0,0,0,.1); border-color: var(--muted2); }
+  .card:hover { border-color: var(--verde); background: var(--card2); }
   .card.active {
     border-color: var(--cyan); border-left-color: var(--cyan);
-    background: var(--cyan-lt); box-shadow: 0 0 0 2px rgba(0,174,239,.15);
+    background: var(--verde-lt); box-shadow: 0 0 0 2px rgba(4,216,26,.35);
   }
-  .card.unread { border-left-color: var(--cyan); background: #F0FBFF; }
-  .card.unread:hover { background: #E5F8FF; }
+  .card.unread { border-left-color: var(--cyan); background: var(--card2); }
+  .card.unread:hover { background: var(--verde-lt); }
   .card-top { display: flex; align-items: flex-start; gap: 6px; margin-bottom: 2px; }
   .card-name {
     font-size: 12.5px; font-weight: 700; flex: 1;
@@ -155,15 +184,15 @@
   /* ─── CHAT SIDE ──────────────────────── */
   .chat-side {
     width: 0; flex-shrink: 0; display: flex; flex-direction: column;
-    overflow: hidden; background: var(--white);
+    overflow: hidden; background: var(--card);
     border-left: 1px solid var(--border); transition: width .2s ease;
   }
   .chat-side.open { width: 420px; }
 
   .chat-header {
-    background: var(--white); border-bottom: 1px solid var(--border);
+    background: var(--card); border-bottom: 1px solid var(--border);
     padding: 10px 14px; display: flex; align-items: center;
-    gap: 9px; flex-shrink: 0; box-shadow: 0 1px 4px rgba(0,0,0,.05);
+    gap: 9px; flex-shrink: 0;
   }
   .chat-close-btn {
     background: none; border: none; cursor: pointer; font-size: 17px;
@@ -184,7 +213,7 @@
   .toggle-off { background: var(--cyan);  color: #fff; }
   .summary-toggle-btn {
     font-size: 10.5px; padding: 3px 8px; border-radius: 6px;
-    border: 1px solid var(--border); background: var(--white); color: var(--muted);
+    border: 1px solid var(--border); background: var(--card); color: var(--muted);
     cursor: pointer; font-family: inherit; white-space: nowrap; font-weight: 600;
     transition: background .15s; flex-shrink: 0;
   }
@@ -216,15 +245,15 @@
     padding: 8px 12px; border-radius: 14px; font-size: 13px;
     line-height: 1.52; white-space: pre-wrap; word-break: break-word;
   }
-  .msg-row.user      .msg-bubble { background: var(--white); border-bottom-left-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,.09); color: var(--text); }
-  .msg-row.assistant .msg-bubble { background: #D4F3E5; color: #0d3d27; border-bottom-right-radius: 4px; }
+  .msg-row.user      .msg-bubble { background: var(--card); border-bottom-left-radius: 4px; border: 1px solid var(--border); color: var(--text); }
+  .msg-row.assistant .msg-bubble { background: var(--verde); color: var(--preto); font-weight: 500; border-bottom-right-radius: 4px; }
   .msg-row.system    .msg-bubble { background: var(--surface); color: var(--muted); font-size: 12px; text-align: center; border-radius: 8px; border: 1px solid var(--border); }
   .msg-tag  { font-size: 10px; color: var(--muted); margin-bottom: 2px; }
   .msg-time { font-size: 10.5px; color: var(--muted); margin-top: 3px; }
 
   /* ─── INPUT ──────────────────────────── */
   .input-area {
-    background: var(--white); border-top: 1px solid var(--border);
+    background: var(--card); border-top: 1px solid var(--border);
     padding: 9px 12px; display: flex; flex-direction: column; gap: 7px; flex-shrink: 0;
   }
   .input-row { display: flex; gap: 7px; align-items: flex-end; }
@@ -241,7 +270,7 @@
     white-space: nowrap; transition: background .15s;
   }
   .send-btn:hover    { background: var(--cyan-dk); }
-  .send-btn:disabled { background: #b3dff5; cursor: default; }
+  .send-btn:disabled { background: var(--muted); cursor: default; }
   .img-btn {
     padding: 0 10px; height: 40px; background: var(--surface); color: var(--muted);
     border: 1px solid var(--border); border-radius: 8px; font-size: 18px; cursor: pointer;
@@ -272,7 +301,7 @@
   .img-send-actions { display: flex; gap: 7px; justify-content: flex-end; }
   .img-send-ok { padding: 5px 13px; background: var(--cyan); color: #fff; border: none; border-radius: 6px; font-size: 12.5px; font-weight: 700; cursor: pointer; }
   .img-send-ok:hover { background: var(--cyan-dk); }
-  .img-send-ok:disabled { background: #b3dff5; cursor: default; }
+  .img-send-ok:disabled { background: var(--muted); cursor: default; }
   .img-send-cancel { padding: 5px 10px; background: transparent; border: 1px solid var(--border); border-radius: 6px; color: var(--muted); font-size: 12.5px; cursor: pointer; }
   .img-send-cancel:hover { background: var(--surface); }
 
@@ -284,9 +313,9 @@
   }
   .modal-backdrop.open { display: flex; }
   .modal-box {
-    background: var(--white); border-radius: 16px; padding: 26px;
+    background: var(--card); border-radius: 16px; padding: 26px;
     width: 440px; max-width: 95vw; display: flex; flex-direction: column; gap: 14px;
-    box-shadow: 0 16px 48px rgba(0,0,0,.22);
+    box-shadow: 0 16px 48px rgba(0,0,0,.7); border: 1px solid var(--border);
   }
   .modal-box h3 { font-size: 16px; font-weight: 800; color: var(--dark); }
   .modal-box p  { font-size: 13px; color: var(--muted); }
@@ -308,7 +337,7 @@
     background: var(--dark); color: #fff; padding: 9px 20px;
     border-radius: 8px; font-size: 13px; opacity: 0;
     transition: opacity .25s; pointer-events: none; z-index: 9999;
-    box-shadow: 0 4px 16px rgba(0,0,0,.2);
+    box-shadow: 0 4px 16px rgba(0,0,0,.6);
   }
   #toast.show { opacity: 1; }
 

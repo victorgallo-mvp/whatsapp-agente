@@ -924,6 +924,7 @@ async function processarMensagensPendentes(userId) {
       .replace(/\[TRANSFERIR_ATENDENTE\].*/g, "")
       .replace(/\[CONSULTAR_TIME\].*/g, "")
       .replace(/\[COMPROVANTE_RECEBIDO\].*/g, "")
+      .replace(/\[AGENDAMENTO_SOLICITADO\].*/g, "")
       .replace(/\[VENDA_FECHADA\].*/g, "")
       .trim();
 
@@ -1789,6 +1790,44 @@ async function verificarGatilhos(reply, userId) {
     console.log("[VENDA_FECHADA]", nome, "|", campo("Modelo"));
   }
 
+  // ─── PEDIDO DE AGENDAMENTO ─────────────────────────────────────────────────
+  // Desenho deliberado: a IA NÃO marca nada. Ela informa os horários de
+  // funcionamento, colhe a preferência de dia e turno, e entrega isso a uma
+  // pessoa, que confere a agenda de verdade e confirma com o paciente.
+  // É o caminho possível quando o sistema da clínica não tem API — e é também o
+  // mais seguro: agendamento errado em saúde custa a consulta e a confiança.
+  if (reply.includes("[AGENDAMENTO_SOLICITADO]")) {
+    const linha      = reply.match(/\[AGENDAMENTO_SOLICITADO\](.*)/)?.[1]?.trim() || "";
+    const nome       = linha.match(/Nome: ([^|]+)/)?.[1]?.trim()       || "Paciente";
+    const telefone   = linha.match(/Telefone: ([^|]+)/)?.[1]?.trim()   || userId;
+    const procura    = linha.match(/Procura: ([^|]+)/)?.[1]?.trim()    || "não informado";
+    const preferencia= linha.match(/Preferencia: ([^|]+)/)?.[1]?.trim()|| "sem preferência";
+    const convenio   = linha.match(/Convenio: ([^|]+)/)?.[1]?.trim()   || "";
+    const primeira   = linha.match(/PrimeiraVez: ([^|]+)/)?.[1]?.trim()|| "";
+    const observacao = linha.match(/Observacao: ([^|]+)/)?.[1]?.trim() || "";
+    const foneWA     = formatarTelefoneWA(telefone);
+
+    await upsertLead(userId, { nome, stage: "agendando" });
+    await db.query(`UPDATE leads SET olivia_ativa = FALSE WHERE phone = $1`, [userId]);
+
+    const corpo =
+      `Paciente quer agendar. Confira a agenda e confirme o horário com ele.\n\n` +
+      `Nome: ${nome}\n` +
+      `Telefone: ${telefone}\n` +
+      `Procura: ${procura}\n` +
+      `Prefere: ${preferencia}\n` +
+      (convenio ? `Convênio: ${convenio}\n` : "") +
+      (primeira ? `Primeira vez: ${primeira}\n` : "") +
+      (observacao ? `Contexto: ${observacao}\n` : "") +
+      `\nAbrir conversa: https://wa.me/${foneWA}\n\n` +
+      `${AGENTE} já disse ao paciente que alguém vai confirmar o horário, e foi desativada nesse chat. ` +
+      `Responda direto pelo WhatsApp ou pelo painel.`;
+
+    await notificarResponsavel(`Pedido de agendamento — ${nome} (${preferencia})`, corpo);
+    broadcastSSE("leads_update", { phone: userId });
+    console.log("[AGENDAMENTO_SOLICITADO]", nome, "|", procura, "|", preferencia, "| IA desativada para:", userId);
+  }
+
   // ─── COMPROVANTE DE PAGAMENTO ──────────────────────────────────────────────
   // Não pausa a IA, de propósito. O cliente acabou de mandar dinheiro: sumir
   // nesse momento é o pior atendimento possível, e não é necessário. Ela sabe
@@ -2245,6 +2284,7 @@ app.post("/api/leads/iniciar", async (req, res) => {
       .replace(/\[TRANSFERIR_ATENDENTE\].*/g, "")
       .replace(/\[CONSULTAR_TIME\].*/g, "")
       .replace(/\[COMPROVANTE_RECEBIDO\].*/g, "")
+      .replace(/\[AGENDAMENTO_SOLICITADO\].*/g, "")
       .replace(/\[VENDA_FECHADA\].*/g, "")
       .trim();
 
@@ -2593,7 +2633,8 @@ app.get("/admin/knowledge/search", async (req, res) => {
 const playgroundSessions = new Map(); // sessionId -> [{ role, content }]
 const TAGS_GATILHO = ["LEAD_CAPTURADO", "VISITA_SOLICITADA", "ARTE_APROVADA", "ARTE_REVISAO",
                        "ORCAMENTO_APROVADO", "VISITA_REAGENDADA", "VISITA_CANCELADA", "PRECISA_SUPORTE",
-                       "TRANSFERIR_ATENDENTE", "CONSULTAR_TIME", "COMPROVANTE_RECEBIDO", "VENDA_FECHADA"];
+                       "TRANSFERIR_ATENDENTE", "CONSULTAR_TIME", "COMPROVANTE_RECEBIDO", "VENDA_FECHADA",
+                       "AGENDAMENTO_SOLICITADO"];
 
 // Tags que desativam a IA em produção. O playground precisa simular isso, senão
 // dá falsa impressão nos fluxos de passagem: numa sessão de teste a IA disparou
@@ -2603,7 +2644,8 @@ const TAGS_GATILHO = ["LEAD_CAPTURADO", "VISITA_SOLICITADA", "ARTE_APROVADA", "A
 // IA continua atendendo. Já esteve aqui por engano, e o playground passou a
 // simular uma pausa que produção não faz — simulação mentindo sobre o
 // comportamento real é pior que não simular.
-const TAGS_QUE_PAUSAM = ["PRECISA_SUPORTE", "TRANSFERIR_ATENDENTE", "CONSULTAR_TIME", "VENDA_FECHADA"];
+const TAGS_QUE_PAUSAM = ["PRECISA_SUPORTE", "TRANSFERIR_ATENDENTE", "CONSULTAR_TIME", "VENDA_FECHADA",
+                         "AGENDAMENTO_SOLICITADO"];
 const playgroundPausados = new Set(); // sessionId que já bateu numa tag de pausa
 
 app.get("/admin/playground/clients", (req, res) => {
