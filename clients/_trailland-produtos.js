@@ -11,13 +11,13 @@ module.exports = {
   tabelaPrecos: `TABELA DE PREÇOS (MXF Motors, julho 2026):
 
 MOTOS PERFORMANCE (atenção ao sufixo | é ele que muda o preço):
-Mxf 270 FI | 4T, trail com injeção | R$ 27.500 (vermelha)
-Mxf 270 MXI | 4T, motocross | R$ 33.900 (vermelha)
-Mxf 250 TSX | 2T | R$ 34.900 (vermelha)
-Mxf 250 RXI | 4T | R$ 38.000 (vermelha)
-Mxf 300 TSX | 2T | R$ 44.900 (vermelha)
-Mxf 250 RXIR | 4T | R$ 52.490 (vermelha)
-Mxf 300 TSX-R | 2T | R$ 54.990 (vermelha)
+Mxf 270 FI | 4T, trail com injeção | R$ 27.500 (vermelha) | à vista: +R$ 500 em acessórios
+Mxf 270 MXI | 4T, motocross | R$ 33.900 (vermelha) | SEM acessório
+Mxf 250 TSX | 2T | R$ 34.900 (vermelha) | à vista: +R$ 1.000 em acessórios
+Mxf 250 RXI (base, não é a RXIR) | 4T | R$ 38.000 (vermelha) | SEM acessório
+Mxf 300 TSX | 2T | R$ 44.900 (vermelha) | à vista: +R$ 1.000 em acessórios
+Mxf 250 RXIR (competição, termina em R) | 4T | R$ 52.490 (vermelha) | à vista: +R$ 1.500 em acessórios
+Mxf 300 TSX-R | 2T | R$ 54.990 (vermelha) | à vista: +R$ 1.500 em acessórios
 
 LINHA RR:
 Pro Racing 110RR 4T | R$ 11.990 (azul, laranja, vermelha, verde)
@@ -28,7 +28,7 @@ MINI MOTOS:
 Ferinha 49cc 2T | R$ 5.990 (azul, laranja, vermelho, verde)
 Ferinha 60F 4T sem partida | R$ 6.490 (azul, vermelho)
 Pro Racing 90RR 4T | R$ 9.590 (azul, laranja, vermelha, verde)
-Mxf 50TS 2T | R$ 10.690 (vermelho, amarelo)
+Mxf 50TS 2T | R$ 10.690 (vermelho, amarelo) | SEM acessório
 
 QUADRICICLOS 4X4 (atenção: Wolf 700 e Wolf 700 MUD são produtos diferentes):
 
@@ -90,17 +90,17 @@ TODAS AS MOTOS, DA MAIS BARATA PRA MAIS CARA:
 Ferinha 49cc 2T | R$ 5.990 (azul, laranja, vermelho, verde)
 Ferinha 60F 4T sem partida | R$ 6.490 (azul, vermelho)
 Pro Racing 90RR 4T | R$ 9.590 (azul, laranja, vermelha, verde)
-Mxf 50TS 2T | R$ 10.690 (vermelho, amarelo)
+Mxf 50TS 2T | R$ 10.690 (vermelho, amarelo) | SEM acessório
 Pro Racing 110RR 4T | R$ 11.990 (azul, laranja, vermelha, verde)
 Pro Racing 125RR 4T | R$ 12.990 (azul, laranja, vermelha, verde)
 Pro Racing 150RR 4T | R$ 17.490 (vermelha, laranja)
-Mxf 270 FI | 4T, trail com injeção | R$ 27.500 (vermelha)
-Mxf 270 MXI | 4T, motocross | R$ 33.900 (vermelha)
-Mxf 250 TSX | 2T | R$ 34.900 (vermelha)
-Mxf 250 RXI | 4T | R$ 38.000 (vermelha)
-Mxf 300 TSX | 2T | R$ 44.900 (vermelha)
-Mxf 250 RXIR | 4T | R$ 52.490 (vermelha)
-Mxf 300 TSX-R | 2T | R$ 54.990 (vermelha)
+Mxf 270 FI | 4T, trail com injeção | R$ 27.500 (vermelha) | à vista: +R$ 500 em acessórios
+Mxf 270 MXI | 4T, motocross | R$ 33.900 (vermelha) | SEM acessório
+Mxf 250 TSX | 2T | R$ 34.900 (vermelha) | à vista: +R$ 1.000 em acessórios
+Mxf 250 RXI (base, não é a RXIR) | 4T | R$ 38.000 (vermelha) | SEM acessório
+Mxf 300 TSX | 2T | R$ 44.900 (vermelha) | à vista: +R$ 1.000 em acessórios
+Mxf 250 RXIR (competição, termina em R) | 4T | R$ 52.490 (vermelha) | à vista: +R$ 1.500 em acessórios
+Mxf 300 TSX-R | 2T | R$ 54.990 (vermelha) | à vista: +R$ 1.500 em acessórios
 
 TODOS OS QUADRICICLOS, DO MAIS BARATO PRO MAIS CARO:
 
@@ -198,16 +198,17 @@ Se depois disso ele quiser falar de compra de máquina, siga o atendimento norma
 
 PAGAMENTO À VISTA DÁ ACESSÓRIOS:
 
-Quem paga à vista leva um valor em acessórios junto. O valor MUDA POR MODELO, e são estes:
+O valor de acessório está escrito NA LINHA de cada produto, na tabela de preços. Leia de lá e nunca de cabeça:
+A linha traz "à vista: +R$ X em acessórios" quando o produto tem a condição.
+A linha traz "SEM acessório" quando ele não tem.
+A linha não traz nada sobre acessório na esmagadora maioria dos produtos | e isso significa que NÃO TEM, igual ao "SEM acessório".
 
-Mxf 270 FI | R$ 500,00 em acessórios
-Mxf 250 TSX | R$ 1.000,00 em acessórios
-Mxf 300 TSX | R$ 1.000,00 em acessórios
-Mxf 250 RXi-R | R$ 1.500,00 em acessórios
-Mxf 300 TSX-R | R$ 1.500,00 em acessórios
+Essa é a única fonte. Não existe valor de acessório que você calcule, deduza ou lembre: se não está escrito na linha daquele produto, não existe.
+Cuidado com os nomes que são prefixo um do outro. "250 RXI" é o começo de "250 RXIR", e são máquinas diferentes: a RXI custa R$ 38.000 e NÃO tem acessório; a RXIR custa R$ 52.490 e tem R$ 1.500. Antes de ler a linha, confira se o nome termina em R ou não. Já aconteceu de prometer os R$ 1.500 da RXIR numa RXI.
 
-Esses cinco, e só esses. A 270 MXi e a 250 RXi não estão nesta lista: não ofereça acessório nelas, não estime um valor por proximidade de preço, e se perguntarem diga que confirma e retorna.
-O valor é por modelo e nunca é um valor único para a linha. R$ 1.500 é só das duas máquinas de topo | dizer isso de uma 270 FI ou de uma 250 TSX promete o triplo do que existe.
+São cinco produtos no catálogo inteiro, e todos são MXF de performance. Nome parecido não vale: a 50TS, a 270 MXi e a 250 RXi são MXF e NÃO têm a condição, por isso a linha delas diz "SEM acessório". Mini moto, quadriciclo, elétrico e Fantic também não têm.
+Nunca derive o valor por proximidade de preço, por família, por cilindrada ou por a máquina ser da mesma marca. Já aconteceu de oferecer R$ 1.000 numa Pro Racing 110RR de R$ 11.990, R$ 500 numa 50TS e R$ 1.000 numa 250 RXi | nenhuma tem condição alguma.
+Se o cliente perguntar de acessório num produto que não tem, não negue de forma seca nem estime: diga que essa condição o vendedor confirma, e siga a conversa.
 Vale para pagamento à vista, em pix ou dinheiro. Não vale para cartão parcelado nem para consórcio.
 Quais acessórios entram nesse valor é escolha do cliente na loja. Você passa o valor, não a lista de itens | essa parte o consultor detalha.
 Pode oferecer sem esperar que perguntem, quando o cliente estiver vendo um modelo que está na lista: é argumento real e ajuda a decidir.
