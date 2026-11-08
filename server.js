@@ -2630,7 +2630,7 @@ app.get("/admin/knowledge/search", async (req, res) => {
 // Evolution nem número conectado. Histórico fica só em memória (Map abaixo) —
 // nunca grava em "mensagens"/"leads", então não polui o banco real nem o
 // dashboard com conversa de teste. Reinicia sozinho se o processo reiniciar.
-const playgroundSessions = new Map(); // sessionId -> [{ role, content }]
+const playgroundSessions = new Map(); // "clientSlug::sessionId" -> [{ role, content }]
 const TAGS_GATILHO = ["LEAD_CAPTURADO", "VISITA_SOLICITADA", "ARTE_APROVADA", "ARTE_REVISAO",
                        "ORCAMENTO_APROVADO", "VISITA_REAGENDADA", "VISITA_CANCELADA", "PRECISA_SUPORTE",
                        "TRANSFERIR_ATENDENTE", "CONSULTAR_TIME", "COMPROVANTE_RECEBIDO", "VENDA_FECHADA",
@@ -2646,7 +2646,7 @@ const TAGS_GATILHO = ["LEAD_CAPTURADO", "VISITA_SOLICITADA", "ARTE_APROVADA", "A
 // comportamento real é pior que não simular.
 const TAGS_QUE_PAUSAM = ["PRECISA_SUPORTE", "TRANSFERIR_ATENDENTE", "CONSULTAR_TIME", "VENDA_FECHADA",
                          "AGENDAMENTO_SOLICITADO"];
-const playgroundPausados = new Set(); // sessionId que já bateu numa tag de pausa
+const playgroundPausados = new Set(); // "clientSlug::sessionId" que já bateu numa tag de pausa
 
 app.get("/admin/playground/clients", (req, res) => {
   const fs = require("fs");
@@ -2662,7 +2662,13 @@ app.get("/admin/playground/clients", (req, res) => {
 // gravado: a conversa anterior continua consultável pra análise depois.
 app.post("/admin/playground/reset", (req, res) => {
   const { sessionId } = req.body;
-  if (sessionId) { playgroundSessions.delete(sessionId); playgroundPausados.delete(sessionId); }
+  // Limpa a sessão em TODOS os agentes: a chave agora é "slug::sessionId", e
+  // quem aperta "reiniciar" espera começar do zero, não só no agente aberto.
+  if (sessionId) {
+    for (const k of [...playgroundSessions.keys()]) if (k.endsWith(`::${sessionId}`)) playgroundSessions.delete(k);
+    for (const k of [...playgroundPausados])       if (k.endsWith(`::${sessionId}`)) playgroundPausados.delete(k);
+    playgroundSessions.delete(sessionId); playgroundPausados.delete(sessionId);
+  }
   res.json({ ok: true, novaSessao: require("crypto").randomUUID() });
 });
 
@@ -2679,27 +2685,35 @@ app.post("/admin/playground/chat", async (req, res) => {
     return res.status(404).json({ error: `Cliente "${clientSlug}" não encontrado em clients/` });
   }
 
+  // A chave da sessão inclui o agente. Sem isso, trocar de cliente no seletor
+  // do playground mantinha o MESMO histórico: a Sofia (clínica) recebia a
+  // conversa da Lorrania (motos) como se fosse dela. Num teste a Sofia percebeu
+  // e respondeu "acho que você chegou no lugar errado" — mas isso foi o prompt
+  // segurando, não isolamento. Entre dois agentes do mesmo nicho, ou numa
+  // pergunta ambígua, ela teria continuado o assunto do outro.
+  const chaveSessao = `${clientSlug}::${sessionId}`;
+
   // Não está em memória: pode ser sessão nova ou sessão que sobreviveu a um
   // deploy (o Map morre com o processo). Reidrata do banco antes de continuar,
   // senão a conversa "reinicia" do zero no meio do teste sem ninguém entender.
-  if (!playgroundSessions.has(sessionId)) {
+  if (!playgroundSessions.has(chaveSessao)) {
     let anterior = [];
     try {
       const r = await db.query(
-        `SELECT role, content FROM playground_mensagens WHERE session_id = $1 ORDER BY created_at ASC LIMIT 60`,
-        [sessionId]
+        `SELECT role, content FROM playground_mensagens WHERE session_id = $1 AND client_slug = $2 ORDER BY created_at ASC LIMIT 60`,
+        [sessionId, clientSlug]
       );
       anterior = r.rows.map(m => ({ role: m.role, content: m.content }));
-      if (anterior.length) console.log(`[PLAYGROUND] sessão ${sessionId} reidratada do banco (${anterior.length} msgs)`);
+      if (anterior.length) console.log(`[PLAYGROUND] sessão ${chaveSessao} reidratada do banco (${anterior.length} msgs)`);
     } catch (err) {
       console.error("[PLAYGROUND] Falha ao reidratar sessão:", err.message);
     }
-    playgroundSessions.set(sessionId, anterior);
+    playgroundSessions.set(chaveSessao, anterior);
   }
-  const history = playgroundSessions.get(sessionId);
+  const history = playgroundSessions.get(chaveSessao);
   history.push({ role: "user", content: message });
 
-  if (playgroundPausados.has(sessionId)) {
+  if (playgroundPausados.has(chaveSessao)) {
     db.query(
       `INSERT INTO playground_mensagens (session_id, client_slug, role, content) VALUES ($1, $2, 'user', $3)`,
       [sessionId, clientSlug, message]
@@ -2778,7 +2792,7 @@ app.post("/admin/playground/chat", async (req, res) => {
     ).catch(err => console.error("[PLAYGROUND] Falha ao gravar conversa:", err.message));
 
     const pausou = tagsDetectadas.some(t => TAGS_QUE_PAUSAM.includes(t));
-    if (pausou) playgroundPausados.add(sessionId);
+    if (pausou) playgroundPausados.add(chaveSessao);
 
     const precosSuspeitos = conferirPrecos(replyLimpo, clientConfig.instructions);
     if (precosSuspeitos.length) console.warn("[PRECO][SUSPEITO]", precosSuspeitos, "|", replyLimpo.slice(0, 140));
