@@ -201,7 +201,24 @@ E quando a IA não dá preço, evasiva pura também perde. O que funciona é
 responder a pergunta que está atrás do "quanto custa" — quase sempre "cabe no
 meu bolso" — com o que existe de real: parcelamento, condição, ou o que for.
 
-## 14. O custo é quase todo prompt fixo
+## 14. Extração estruturada por mensagem dobra o custo
+
+O sistema de qualificação roda uma chamada Haiku a cada mensagem do cliente,
+relendo a conversa inteira e reextraindo todos os campos.
+
+Medido na Protásio (13 campos, conversa de 8 turnos): **929 tokens de entrada
+por chamada**. A 1.000 leads e 8 turnos, são US$ 19,43/mês — contra US$ 17,41
+do agente inteiro. Ou seja, mais que dobra.
+
+Dois motivos: o Haiku 4.5 exige 4.096 tokens para cachear e a chamada tem 929,
+então nunca cacheia; e cada turno relê tudo de novo, então o custo cresce com
+o tamanho da conversa.
+
+Se o custo incomodar, o caminho é mandar só as mensagens novas desde a última
+extração (a função já recebe o que foi extraído antes) em vez da conversa
+inteira. Não foi feito ainda.
+
+## 15. O custo é quase todo prompt fixo
 
 97% dos tokens de entrada de cada mensagem são o prompt de sistema. O histórico
 da conversa é ruído perto disso.

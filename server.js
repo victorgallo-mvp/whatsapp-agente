@@ -2868,7 +2868,15 @@ app.get("/admin/playground/clients", (req, res) => {
   const arquivos = fs.readdirSync(path.join(__dirname, "clients"))
     .filter(f => f.endsWith(".js") && !f.startsWith("_"))
     .map(f => f.replace(/\.js$/, ""));
-  res.json({ clients: arquivos });
+
+  // Por padrão o playground de um deploy mostra SÓ o agente daquele cliente.
+  // Antes listava todos, e o seletor somado ao sessionId salvo no navegador
+  // fazia testar o agente errado sem perceber — já aconteceu de a conversa de
+  // um cliente aparecer no agente de outro.
+  // PLAYGROUND_TODOS_AGENTES=true reabre a lista completa, para o deploy que
+  // serve de banco de testes enquanto um cliente novo ainda não tem o seu.
+  if (process.env.PLAYGROUND_TODOS_AGENTES === "true") return res.json({ clients: arquivos });
+  res.json({ clients: arquivos.filter(c => c === CLIENT_SLUG) });
 });
 
 // Reiniciar limpa a memória e começa uma sessão nova, mas NÃO apaga o que foi
