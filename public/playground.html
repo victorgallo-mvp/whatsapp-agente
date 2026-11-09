@@ -97,6 +97,10 @@
     </div>
   </div>
   <div id="debug-col">
+    <div id="qualif-box" style="display:none;margin-bottom:18px">
+      <h2>Triagem do lead</h2>
+      <div id="qualif-content"></div>
+    </div>
     <h2>Última busca no conhecimento</h2>
     <div id="debug-content"><span class="empty-hint" style="margin-top:0">Nada ainda.</span></div>
   </div>
@@ -121,6 +125,22 @@
     const r = await fetch("/admin/playground/clients");
     const { clients } = await r.json();
     clientSelect.innerHTML = clients.map(c => `<option value="${c}">${c}</option>`).join("");
+
+    // ?client=<slug> na URL fixa o agente e vence o que estiver salvo. Serve
+    // para ter um link por agente — dá para deixar aberto numa aba sem risco
+    // de testar o agente errado por causa do que ficou selecionado antes.
+    const daUrl = new URLSearchParams(location.search).get("client");
+    if (daUrl && clients.includes(daUrl)) {
+      clientSelect.value = daUrl;
+      localStorage.setItem("playground-client", daUrl);
+      // Sessão própria por agente: duas abas com agentes diferentes não
+      // compartilham histórico, mesmo no mesmo navegador.
+      const chave = "playground-session-" + daUrl;
+      sessionId = localStorage.getItem(chave) || crypto.randomUUID();
+      localStorage.setItem(chave, sessionId);
+      document.title = daUrl + " — Playground";
+      return;
+    }
     const salvo = localStorage.getItem("playground-client");
     if (salvo && clients.includes(salvo)) clientSelect.value = salvo;
   }
@@ -144,6 +164,25 @@
     }
     messagesEl.appendChild(row);
     messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  // Ficha + nota do agente de triagem, quando o cliente tem qualificação. É a
+  // mesma extração e a mesma régua da produção, então o que aparece aqui é o
+  // que o vendedor veria na fila.
+  function renderQualificacao(q) {
+    const box = document.getElementById("qualif-box");
+    const el  = document.getElementById("qualif-content");
+    if (!q) { box.style.display = "none"; return; }
+    box.style.display = "";
+    const cor = { quente: "#1f7a4d", morno: "#8a5a12", frio: "#1f4b8a", sem_dados: "#3a3f4a" }[q.temperatura] || "#3a3f4a";
+    const esc = s => String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;");
+    el.innerHTML = `
+      <div class="debug-entry" style="border-color:${cor}">
+        <div class="sim" style="color:#e8eaed">${esc(q.temperatura).toUpperCase()} · ${q.score}/100</div>
+        <div class="ctx" style="white-space:pre-line;color:#e8eaed;margin-top:6px">${esc(q.ficha || "(nada extraído ainda)")}</div>
+        ${q.motivos?.length ? `<div class="ctx" style="margin-top:6px">Por quê: ${esc(q.motivos.join("; "))}</div>` : ""}
+        ${q.faltando?.length ? `<div class="ctx" style="margin-top:4px;color:#ffb877">Falta perguntar: ${esc(q.faltando.join(", "))}</div>` : ""}
+      </div>`;
   }
 
   function renderDebug(knowledgeUsado) {
@@ -216,6 +255,7 @@
         messagesEl.appendChild(aviso);
       }
       renderDebug(data.knowledgeUsado);
+      renderQualificacao(data.qualificacao);
     } catch (e) {
       loadingRow.remove();
       addRow("assistant", "[erro de conexão] " + e.message);
@@ -244,10 +284,12 @@
     let dados = {};
     try { dados = await r.json(); } catch (e) {}
     sessionId = dados.novaSessao || crypto.randomUUID();
-    localStorage.setItem("playground-session", sessionId);
+    const daUrl = new URLSearchParams(location.search).get("client");
+    localStorage.setItem(daUrl ? "playground-session-" + daUrl : "playground-session", sessionId);
 
     messagesEl.innerHTML = '<div class="empty-hint">Atendimento novo. ' + AGENTE + ' não sabe nada da conversa anterior.</div>';
     debugEl.innerHTML = '<span class="empty-hint" style="margin-top:0">Nada ainda.</span>';
+    renderQualificacao(null);
   });
 
   carregarClientes();

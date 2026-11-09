@@ -43,3 +43,28 @@ muitos clientes ao ponto de banco-por-cliente ficar caro/inviável de
 gerenciar, aí vale investir num refactor de multi-tenancy de verdade
 (tenant resolvido por instância do webhook, tabelas particionadas). Com
 poucos clientes, isolamento total por deploy é mais simples e mais seguro.
+
+## Triagem estruturada (`qualificacao`)
+
+Agente cujo trabalho é **filtrar e ranquear** lead, não vender (primeiro caso:
+`protasio.js`). O cliente declara no próprio arquivo:
+
+- `qualificacao.campos` — o que extrair da conversa. Campo com `opcoes` só
+  aceita um dos valores listados; sem `opcoes` é texto livre.
+- `qualificacao.pontuar(campos)` — a régua: devolve `{ score, temperatura,
+  motivos, faltando }`. É código, não prompt: dois leads iguais recebem a
+  mesma nota e o vendedor vê o porquê.
+- `rotulos` / `valores` — como cada campo e valor aparecem pra gente.
+
+O motor (`server.js`) faz o resto: extrai a cada turno com Haiku e mescla com
+o que já sabia (`atualizarQualificacao`), injeta o já respondido no prompt pra
+IA não perguntar de novo, grava em `leads.qualificacao/score/temperatura`, e
+no `[LEAD_QUALIFICADO]` refaz a ficha, notifica o responsável com nota e
+motivos e pausa a IA.
+
+Telas: `/fila` é a lista ranqueada pro vendedor (temperatura → nota → último
+contato, com o que faltou perguntar). O `/dashboard` ganha o selo de
+temperatura no cartão e o link pra fila. O `/playground` mostra a ficha e a
+nota a cada turno, com a mesma extração da produção.
+
+Sem `qualificacao` no arquivo do cliente nada disso roda: zero custo extra.

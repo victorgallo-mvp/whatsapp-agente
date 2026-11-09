@@ -116,6 +116,14 @@ async function initDb() {
   await db.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS anuncio_ctwa_clid TEXT`);
   await db.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS anuncio_url TEXT`);
   await db.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS anuncio_fonte TEXT`);
+  // Triagem estruturada (ver AGENT_CONFIG.qualificacao e atualizarQualificacao).
+  // Separada de "profile" porque aquele é texto livre do resumidor e esta é
+  // enum por campo: é o que permite pontuar e ordenar sem reler a conversa.
+  // score e temperatura ficam em coluna própria pra ordenar e filtrar em SQL.
+  await db.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS qualificacao JSONB DEFAULT '{}'`);
+  await db.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS score INT`);
+  await db.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS temperatura TEXT`);
+  await db.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS qualificacao_updated_at TIMESTAMPTZ`);
 
   // Migra dados existentes da tabela clientes
   await db.query(`
@@ -206,7 +214,8 @@ async function getHistory(userId) {
 
 async function getLead(phone) {
   const res = await db.query(
-    `SELECT nome, empresa, endereco, stage, profile, last_summary, total_interactions, olivia_ativa, anuncio_origem FROM leads WHERE phone = $1`,
+    `SELECT nome, empresa, endereco, stage, profile, last_summary, total_interactions, olivia_ativa, anuncio_origem,
+            qualificacao, score, temperatura FROM leads WHERE phone = $1`,
     [phone]
   );
   return res.rows[0] || null;
@@ -685,6 +694,138 @@ async function verificarAtualizacaoPerfil(phone) {
   }
 }
 
+// ─── QUALIFICAÇÃO ESTRUTURADA DO LEAD ────────────────────────────────────────
+// Só existe quando o cliente declara AGENT_CONFIG.qualificacao: um dicionário
+// de campos (com as opções válidas de cada um) e uma função pontuar(campos)
+// que devolve score, temperatura, motivos e o que falta perguntar. O servidor
+// não conhece o negócio: extrai o que o cliente pede e pontua com a régua dele.
+//
+// Separado de atualizarPerfilLead de propósito. Aquele é texto livre pra IA
+// lembrar do cliente; este é enum por campo, que é o que permite ordenar uma
+// fila sem reler conversa. Roda a cada turno e MESCLA com o que já se sabia:
+// a pessoa conta a forma de pagamento numa mensagem e a CNH três depois, e o
+// lead que some no meio precisa aparecer no painel com o que já disse.
+function normalizarOpcao(v) {
+  return String(v).toLowerCase().trim()
+    .normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .replace(/[\s-]+/g, "_");
+}
+
+// O trecho citado pelo extrator tem que existir na fala do cliente. Sem esta
+// trava o Haiku preenchia por ausência: "tem CB 500 aí?" virava cnh=nao,
+// entrada=nao, prazo=pesquisando na primeira mensagem, e como a mesclagem
+// carrega o valor adiante, "sem habilitação" grudava no lead até o fim. Pedir
+// a citação e conferir tira a dedução do caminho (LICOES-DE-PROMPT, item 1).
+// Confere por palavras, não por substring exata: o modelo às vezes aparta ou
+// corrige acento ao citar.
+function trechoConfere(trecho, textoCliente) {
+  const palavras = normalizarTexto(String(trecho || "")).split(/[^a-z0-9]+/).filter(w => w.length >= 3);
+  if (!palavras.length) return false;
+  const achadas = palavras.filter(w => textoCliente.includes(w)).length;
+  return achadas / palavras.length >= 0.6;
+}
+
+async function extrairQualificacao(config, history, anterior = {}) {
+  const q = config.qualificacao;
+  if (!q || !history || history.length < 2) return null;
+
+  const conversa     = history.map(m => (m.role === "user" ? "cliente" : "atendente") + ": " + m.content).join("\n");
+  const textoCliente = normalizarTexto(history.filter(m => m.role === "user").map(m => m.content).join(" "));
+  const descricao    = Object.entries(q.campos).map(([k, c]) => c.opcoes
+    ? `  "${k}": {"valor": "uma de: ${c.opcoes.join(" | ")}, ou null", "trecho": "as palavras do cliente que justificam"}  // ${c.desc}`
+    : `  "${k}": "texto curto ou null"  // ${c.desc}`
+  ).join(",\n");
+  const conhecido = Object.keys(anterior).length
+    ? `\n\nO QUE JÁ FOI EXTRAÍDO DESTA MESMA CONVERSA ANTES:\n${JSON.stringify(anterior)}\n` +
+      `Mantenha o que continua valendo. Se a conversa contradisser, o mais recente vence. Devolva a ficha completa, não só o que mudou.`
+    : "";
+
+  const res = await chamarClaude({
+    model:      "claude-haiku-4-5-20251001",
+    max_tokens: 900,
+    system:     `Você lê conversas de atendimento da ${config.company} e preenche uma ficha em JSON.\n` +
+                `null é a resposta padrão de todo campo. Você só preenche quando o CLIENTE disse aquilo com palavras, e copia o trecho dele. ` +
+                `Não deduza por ausência: quem não falou de CNH não é "nao", quem não falou de prazo não é "pesquisando", quem não falou de entrada não é "nao". ` +
+                `O que a atendente perguntou, ofereceu ou supôs não conta. A atendente se chama ${config.name}: isso nunca é o nome do cliente. ` +
+                `Quando o campo lista opções, o valor é exatamente uma delas.`,
+    messages:   [{ role: "user", content:
+      `Campos da ficha:\n{\n${descricao}\n}${conhecido}\n\nConversa:\n${conversa}\n\nResponda só com o JSON, sem comentários.` }],
+  });
+  const texto = res.data.content?.[0]?.text || "";
+  const m = texto.match(/\{[\s\S]*\}/);
+  if (!m) return null;
+  let extraido;
+  try { extraido = JSON.parse(m[0]); } catch { return null; }
+
+  const campos = { ...anterior };
+  for (const [k, c] of Object.entries(q.campos)) {
+    const bruto = extraido[k];
+    if (bruto === null || bruto === undefined || bruto === "" || bruto === "null") continue;
+    if (c.opcoes) {
+      const valor  = normalizarOpcao(typeof bruto === "object" ? bruto.valor : bruto);
+      const trecho = typeof bruto === "object" ? bruto.trecho : "";
+      if (!c.opcoes.includes(valor) || valor === "null") continue;   // fora da lista não entra
+      if (!trechoConfere(trecho, textoCliente)) {
+        console.log(`[QUALIFICACAO] descartado ${k}=${valor}: trecho não confere (${JSON.stringify(trecho).slice(0, 60)})`);
+        continue;
+      }
+      campos[k] = valor;
+    } else {
+      const v = String(typeof bruto === "object" ? bruto.valor || "" : bruto).trim();
+      if (!v || v === "null") continue;
+      // Texto livre marcado com `conferir` precisa estar na fala do cliente.
+      // Sem isso o nome da atendente virou nome do lead ("nome=Bia").
+      if (c.conferir && !trechoConfere(v, textoCliente)) {
+        console.log(`[QUALIFICACAO] descartado ${k}=${JSON.stringify(v).slice(0, 60)}: não está na fala do cliente`);
+        continue;
+      }
+      campos[k] = v.length > 300 ? v.slice(0, 300).replace(/\s+\S*$/, "") : v;
+    }
+  }
+  return campos;
+}
+
+// Ficha legível, com os rótulos e valores do cliente. Vai na notificação, no
+// bloco de contexto do prompt e no playground.
+function fichaQualificacao(campos = {}, separador = "\n", config = AGENT_CONFIG) {
+  const q = config.qualificacao || {};
+  const rot = q.rotulos || {}, val = q.valores || {};
+  return Object.keys(q.campos || {})
+    .filter(k => campos[k] && k !== "observacoes")
+    .map(k => `${rot[k] || k}: ${val[campos[k]] || campos[k]}`)
+    .join(separador);
+}
+
+// Extrai, pontua e grava. Chamada a cada turno (fire and forget) e de forma
+// síncrona no handler de LEAD_QUALIFICADO, pra notificação sair com a ficha
+// final. Devolve o registro gravado, ou null se não havia o que gravar.
+async function atualizarQualificacao(phone, { forcar = false } = {}) {
+  if (!AGENT_CONFIG.qualificacao) return null;
+  try {
+    const atual = (await db.query(`SELECT qualificacao, olivia_ativa FROM leads WHERE phone = $1`, [phone])).rows[0];
+    // Depois da passagem quem fala é o vendedor. O que ele combina não é dado
+    // do cliente e não deve mexer na nota.
+    if (!forcar && atual?.olivia_ativa === false) return null;
+    const anterior = atual?.qualificacao?.campos || {};
+    const campos   = await extrairQualificacao(AGENT_CONFIG, await getHistory(phone), anterior);
+    if (!campos) return null;
+    const nota     = AGENT_CONFIG.qualificacao.pontuar(campos);
+    const registro = { campos, motivos: nota.motivos, faltando: nota.faltando };
+    await db.query(
+      `UPDATE leads SET qualificacao = $2, score = $3, temperatura = $4, qualificacao_updated_at = NOW(),
+                        nome = COALESCE(nome, $5)
+       WHERE phone = $1`,
+      [phone, JSON.stringify(registro), nota.score, nota.temperatura, campos.nome || null]
+    );
+    broadcastSSE("leads_update", { phone });
+    console.log("[QUALIFICACAO]", phone, "|", nota.temperatura, nota.score, "|", nota.motivos.join("; ") || "sem motivos");
+    return { ...registro, score: nota.score, temperatura: nota.temperatura };
+  } catch (err) {
+    console.error("[QUALIFICACAO] erro:", err.message);
+    return null;
+  }
+}
+
 // ─── RELAY DO RESPONSÁVEL ────────────────────────────────────────────────────
 async function processarMensagemResponsavel(body) {
   const texto = body.text?.message || body.image?.caption || body.document?.caption || "";
@@ -926,6 +1067,7 @@ async function processarMensagensPendentes(userId) {
       .replace(/\[COMPROVANTE_RECEBIDO\].*/g, "")
       .replace(/\[AGENDAMENTO_SOLICITADO\].*/g, "")
       .replace(/\[VENDA_FECHADA\].*/g, "")
+      .replace(/\[LEAD_QUALIFICADO\].*/g, "")
       .trim();
 
     // Resposta composta só de tag some inteira ao limpar os marcadores. Sem
@@ -949,6 +1091,7 @@ async function processarMensagensPendentes(userId) {
     // Atualiza contagem de interações e verifica se perfil precisa de update
     upsertLead(userId, {}).catch(err => console.error("[PROCESSAMENTO] upsertLead erro:", err.message));
     verificarAtualizacaoPerfil(userId);
+    atualizarQualificacao(userId);
   } catch (err) {
     console.error("Erro ao processar mensagens:", err.response?.data || err.message);
   } finally {
@@ -1372,6 +1515,13 @@ function blocosDeContexto({ lead = null, knowledge = [], slots = null } = {}) {
     // a IA cristaliza julgamento errado sobre a pessoa e age em cima disso.
     if (p.inferencias)  ctx += `Leitura de perfil (HIPÓTESE, pode estar errada — nunca afirme ao cliente nem trate como fato): ${p.inferencias}\n`;
     if (!p.fatos && lead.last_summary) ctx += `Resumo da conversa anterior: ${lead.last_summary}\n`;
+    // Triagem já extraída entra como "respondido": evita perguntar de novo o
+    // que a pessoa disse três mensagens atrás e já saiu da janela de histórico.
+    const qc = lead.qualificacao?.campos;
+    if (qc && AGENT_CONFIG.qualificacao) {
+      const ficha = fichaQualificacao(qc, " | ");
+      if (ficha) ctx += `Já respondido pelo cliente (não pergunte de novo): ${ficha}\n`;
+    }
     ctx += `Se o cliente mencionar assunto diferente do anterior, atenda normalmente — não force o contexto antigo.\n` +
            `</historico_cliente>`;
   }
@@ -1894,6 +2044,48 @@ async function verificarGatilhos(reply, userId) {
     console.log("[CONSULTAR_TIME]", nome, "|", modelo, "|", pergunta, "| Olivia desativada para:", userId);
   }
 
+  // ─── LEAD QUALIFICADO (triagem concluída) ─────────────────────────────────
+  // Desfecho padrão do agente de triagem: a IA perguntou o que o vendedor
+  // precisava e entrega o lead pontuado. A ficha vem da extração por turno,
+  // refeita aqui de forma síncrona com o turno final, e a nota vem da régua do
+  // cliente (AGENT_CONFIG.qualificacao.pontuar), não do modelo: ranking tem que
+  // ser explicável e dar a mesma nota para dois leads iguais.
+  // Pausa a IA: quem continua é o vendedor, e a reativação é pelo painel.
+  if (reply.includes("[LEAD_QUALIFICADO]")) {
+    const linha  = reply.match(/\[LEAD_QUALIFICADO\](.*)/)?.[1]?.trim() || "";
+    const campo  = n => {
+      const v = linha.match(new RegExp(n + ": ([^|]+)"))?.[1]?.trim() || "";
+      return /^(n[ãa]o (informad|perguntad)|-$)/i.test(v) ? "" : v;
+    };
+    const foneWA = formatarTelefoneWA(userId);
+
+    await upsertLead(userId, { nome: campo("Nome") || null, stage: "qualificado" });
+    await db.query(`UPDATE leads SET olivia_ativa = FALSE WHERE phone = $1`, [userId]);
+
+    const q    = await atualizarQualificacao(userId, { forcar: true });
+    const nome = campo("Nome") || q?.campos?.nome || "Cliente";
+    const temp = { quente: "QUENTE", morno: "MORNO", frio: "FRIO", sem_dados: "SEM DADOS" }[q?.temperatura] || "SEM NOTA";
+    const moto = q?.campos?.modelo || campo("Interesse");
+
+    // Ficha estruturada quando a extração funcionou; a linha da tag como veio,
+    // quando não. O vendedor nunca recebe aviso vazio.
+    const ficha = q ? fichaQualificacao(q.campos) : linha.replace(/ \| /g, "\n");
+    const obs   = campo("Observacao") || q?.campos?.observacoes || "";
+
+    await notificarResponsavel(
+      `Lead ${temp}${q ? ` ${q.score}/100` : ""} — ${nome}${moto ? ` (${moto})` : ""}`,
+      `A ${AGENTE} terminou a triagem. Assuma a conversa.\n\n` +
+      (q?.motivos?.length  ? `Por quê: ${q.motivos.join("; ")}.\n` : "") +
+      (q?.faltando?.length ? `Ficou sem resposta: ${q.faltando.join(", ")}.\n` : "") +
+      `\n${ficha}\n` +
+      (obs ? `\nContexto: ${obs}\n` : "") +
+      `\nAbrir conversa: https://wa.me/${foneWA}\n\n` +
+      `A ${AGENTE} já avisou o cliente que um vendedor continua, e foi desativada nesse chat. Para religar, use o toggle no painel.`
+    );
+    broadcastSSE("leads_update", { phone: userId });
+    console.log("[LEAD_QUALIFICADO]", nome, "|", temp, q?.score ?? "-", "| IA desativada para:", userId);
+  }
+
   if (reply.includes("[VISITA_CANCELADA]")) {
     const linha    = reply.match(/\[VISITA_CANCELADA\](.*)/)?.[1]?.trim() || "";
     const nome     = linha.match(/Nome: ([^|]+)/)?.[1]?.trim()     || "Cliente";
@@ -2286,6 +2478,7 @@ app.post("/api/leads/iniciar", async (req, res) => {
       .replace(/\[COMPROVANTE_RECEBIDO\].*/g, "")
       .replace(/\[AGENDAMENTO_SOLICITADO\].*/g, "")
       .replace(/\[VENDA_FECHADA\].*/g, "")
+      .replace(/\[LEAD_QUALIFICADO\].*/g, "")
       .trim();
 
     await sendZAPIMessage(phoneClean, mensagemLimpa);
@@ -2311,6 +2504,7 @@ app.get("/api/leads", async (req, res) => {
               LEFT(l.anuncio_origem, 160) AS anuncio_origem,
               l.anuncio_id, l.anuncio_ctwa_clid, l.anuncio_url, l.anuncio_fonte,
               l.profile, l.last_summary,
+              l.qualificacao, l.score, l.temperatura, l.qualificacao_updated_at, l.created_at,
               m.content AS ultima_mensagem, m.role AS ultima_role
        FROM leads l
        LEFT JOIN LATERAL (
@@ -2401,6 +2595,24 @@ app.post("/api/leads/:phone/send-image", async (req, res) => {
 
 app.get("/dashboard", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "dashboard.html"));
+});
+
+// Fila de leads ranqueada: a tela do vendedor. Só tem conteúdo quando o cliente
+// declara AGENT_CONFIG.qualificacao; sem isso a página avisa e aponta pro painel.
+app.get("/fila", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "fila.html"));
+});
+
+// Rótulos e valores legíveis da régua do cliente, pra fila e pro playground
+// renderizarem a ficha sem conhecer o negócio.
+app.get("/api/qualificacao", (req, res) => {
+  const q = AGENT_CONFIG.qualificacao;
+  if (!q) return res.json({ ativa: false });
+  res.json({
+    ativa:   true,
+    campos:  Object.keys(q.campos).map(k => ({ chave: k, rotulo: q.rotulos?.[k] || k })),
+    valores: q.valores || {},
+  });
 });
 
 // ─── ADMIN: INDEXAR BASE DE CONHECIMENTO ─────────────────────────────────────
@@ -2634,7 +2846,7 @@ const playgroundSessions = new Map(); // "clientSlug::sessionId" -> [{ role, con
 const TAGS_GATILHO = ["LEAD_CAPTURADO", "VISITA_SOLICITADA", "ARTE_APROVADA", "ARTE_REVISAO",
                        "ORCAMENTO_APROVADO", "VISITA_REAGENDADA", "VISITA_CANCELADA", "PRECISA_SUPORTE",
                        "TRANSFERIR_ATENDENTE", "CONSULTAR_TIME", "COMPROVANTE_RECEBIDO", "VENDA_FECHADA",
-                       "AGENDAMENTO_SOLICITADO"];
+                       "AGENDAMENTO_SOLICITADO", "LEAD_QUALIFICADO"];
 
 // Tags que desativam a IA em produção. O playground precisa simular isso, senão
 // dá falsa impressão nos fluxos de passagem: numa sessão de teste a IA disparou
@@ -2645,8 +2857,9 @@ const TAGS_GATILHO = ["LEAD_CAPTURADO", "VISITA_SOLICITADA", "ARTE_APROVADA", "A
 // simular uma pausa que produção não faz — simulação mentindo sobre o
 // comportamento real é pior que não simular.
 const TAGS_QUE_PAUSAM = ["PRECISA_SUPORTE", "TRANSFERIR_ATENDENTE", "CONSULTAR_TIME", "VENDA_FECHADA",
-                         "AGENDAMENTO_SOLICITADO"];
+                         "AGENDAMENTO_SOLICITADO", "LEAD_QUALIFICADO"];
 const playgroundPausados = new Set(); // "clientSlug::sessionId" que já bateu numa tag de pausa
+const playgroundQualificacao = new Map(); // "clientSlug::sessionId" -> última ficha extraída
 
 app.get("/admin/playground/clients", (req, res) => {
   const fs = require("fs");
@@ -2667,6 +2880,7 @@ app.post("/admin/playground/reset", (req, res) => {
   if (sessionId) {
     for (const k of [...playgroundSessions.keys()]) if (k.endsWith(`::${sessionId}`)) playgroundSessions.delete(k);
     for (const k of [...playgroundPausados])       if (k.endsWith(`::${sessionId}`)) playgroundPausados.delete(k);
+    for (const k of [...playgroundQualificacao.keys()]) if (k.endsWith(`::${sessionId}`)) playgroundQualificacao.delete(k);
     playgroundSessions.delete(sessionId); playgroundPausados.delete(sessionId);
   }
   res.json({ ok: true, novaSessao: require("crypto").randomUUID() });
@@ -2797,7 +3011,22 @@ app.post("/admin/playground/chat", async (req, res) => {
     const precosSuspeitos = conferirPrecos(replyLimpo, clientConfig.instructions);
     if (precosSuspeitos.length) console.warn("[PRECO][SUSPEITO]", precosSuspeitos, "|", replyLimpo.slice(0, 140));
 
-    res.json({ reply: replyLimpo, tagsDetectadas, knowledgeUsado: ragUsado, pausouAgora: pausou, precosSuspeitos });
+    // Mesma extração e mesma régua da produção, pra testar a nota sem
+    // WhatsApp. Síncrona porque o painel mostra a ficha junto da resposta.
+    let qualificacao = null;
+    if (clientConfig.qualificacao) {
+      try {
+        const anterior = playgroundQualificacao.get(chaveSessao)?.campos || {};
+        const campos   = await extrairQualificacao(clientConfig, history, anterior);
+        if (campos) {
+          const nota = clientConfig.qualificacao.pontuar(campos);
+          qualificacao = { campos, ...nota, ficha: fichaQualificacao(campos, "\n", clientConfig) };
+          playgroundQualificacao.set(chaveSessao, qualificacao);
+        }
+      } catch (err) { console.error("[PLAYGROUND] qualificação:", err.message); }
+    }
+
+    res.json({ reply: replyLimpo, tagsDetectadas, knowledgeUsado: ragUsado, pausouAgora: pausou, precosSuspeitos, qualificacao });
   } catch (err) {
     console.error("[PLAYGROUND] Erro:", err.response?.data || err.message);
     res.status(500).json({ error: err.message });
@@ -2906,6 +3135,7 @@ app.get("/", (req, res) => res.json({
   status: "ok",
   agent: AGENT_CONFIG.name,
   company: AGENT_CONFIG.company,
+  qualificacao: !!AGENT_CONFIG.qualificacao,
   calendar: GOOGLE_CALENDAR_ENABLED ? "ativo" : "pendente configuracao",
 }));
 

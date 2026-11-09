@@ -155,6 +155,19 @@
   .olivia-badge.on  { background: var(--cyan-lt); color: var(--cyan-dk); }
   .olivia-badge.off { background: var(--red-lt);  color: var(--red); }
   .unread-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--cyan); flex-shrink: 0; }
+  /* Temperatura da triagem (só aparece quando o agente tem qualificação).
+     Estado, não série: sempre com o texto junto, nunca só a cor. */
+  .temp-badge { font-size: 9.5px; font-weight: 800; padding: 1px 7px; border-radius: 999px; letter-spacing: .4px; text-transform: uppercase; border: 1px solid transparent; }
+  .temp-badge.quente    { background: #EAFBEC; color: #0A7A1C; border-color: #04D81A; }
+  .temp-badge.morno     { background: #FFF7ED; color: #B45309; border-color: #F59E0B; }
+  .temp-badge.frio      { background: #EFF6FF; color: #1D4ED8; border-color: #93C5FD; }
+  .temp-badge.sem_dados { background: #F3F4F6; color: #6B7280; border-color: #D1D5DB; }
+  .header-link {
+    color: rgba(255,255,255,.75); text-decoration: none; font-size: 12px; font-weight: 600;
+    padding: 5px 10px; border-radius: 7px; border: 1px solid rgba(255,255,255,.14); margin-left: auto;
+  }
+  .header-link:hover { background: rgba(255,255,255,.08); color: #fff; }
+  .header-link + #conn-status { margin-left: 0; }
 
   /* ─── CHAT SIDE ──────────────────────── */
   .chat-side {
@@ -200,7 +213,7 @@
     padding: 0 16px; flex-shrink: 0; overflow: hidden;
     max-height: 0; transition: max-height .22s ease;
   }
-  .lead-summary-panel.open { max-height: 110px; }
+  .lead-summary-panel.open { max-height: 220px; overflow-y: auto; }
   .lead-summary-inner { padding: 10px 0; display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
   .summary-field { display: flex; flex-direction: column; gap: 2px; }
   .summary-label { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--muted2); }
@@ -362,6 +375,7 @@
     <span class="brand-name"><span class="cc">O</span>LIVIA</span>
     <span class="brand-sub" data-agente="Painel · {AGENTE}">Painel · Olivia</span>
   </div>
+  <a class="header-link" id="fila-link" href="/fila" style="display:none">Fila de leads</a>
   <span id="conn-status" class="disconnected">Conectando...</span>
 </header>
 
@@ -600,7 +614,7 @@
       if (msgs.some(m => (m.content || "").includes("[VISITA_SOLICITADA]"))) {
         leadColumns[phone] = "visita"; return;
       }
-      if (msgs.some(m => (m.content || "").includes("[LEAD_CAPTURADO]"))) {
+      if (msgs.some(m => (m.content || "").includes("[LEAD_CAPTURADO]") || (m.content || "").includes("[LEAD_QUALIFICADO]"))) {
         leadColumns[phone] = "orcamento"; return;
       }
       const firstAssIdx = msgs.findIndex(m => m.role === "assistant");
@@ -710,6 +724,9 @@
     const empresa = lead.empresa ? `<div class="card-company">${escHtml(lead.empresa)}</div>` : "";
     const preview = previewMsg(lead.ultima_mensagem, lead.ultima_role);
     const dot     = (unread && !active) ? `<span class="unread-dot"></span>` : "";
+    const ROT_TEMP = { quente: "Quente", morno: "Morno", frio: "Frio", sem_dados: "Sem triagem" };
+    const temp    = lead.temperatura && lead.temperatura !== "sem_dados"
+      ? `<span class="temp-badge ${escHtml(lead.temperatura)}">${ROT_TEMP[lead.temperatura] || lead.temperatura}${lead.score != null ? " " + lead.score : ""}</span>` : "";
     return `<div class="card ${cls}" onclick="selectLead('${escHtml(lead.phone)}')">
       <div class="card-top">
         <span class="card-name">${escHtml(lead.nome || lead.phone)}</span>
@@ -718,7 +735,8 @@
       ${empresa}
       ${preview ? `<div class="card-preview">${escHtml(preview)}</div>` : ""}
       <div class="card-footer">
-        <span class="olivia-badge ${olivia ? "on" : "off"}">${olivia ? "Olivia ativa" : "Pausada"}</span>
+        <span class="olivia-badge ${olivia ? "on" : "off"}">${olivia ? AGENTE + " ativa" : "Pausada"}</span>
+        ${temp}
         ${dot}
       </div>
     </div>`;
@@ -776,12 +794,21 @@
     const produto   = prof.produto_interesse;
     const orcamento = prof.orcamento_estimado;
     const resumo    = lead.last_summary;
-    if (!produto && !orcamento && !resumo) {
+    const ficha     = (lead.qualificacao || {}).campos || {};
+    const temFicha  = Object.keys(ficha).length > 0;
+    if (!produto && !orcamento && !resumo && !temFicha) {
       panel.innerHTML = ""; panel.classList.remove("open"); btn.style.display = "none"; return;
     }
     let fields = "";
     if (produto)   fields += `<div class="summary-field"><span class="summary-label">Produto</span><span class="summary-value">${escHtml(produto)}</span></div>`;
     if (orcamento) fields += `<div class="summary-field"><span class="summary-label">Orçamento est.</span><span class="summary-value">${escHtml(orcamento)}</span></div>`;
+    if (temFicha) {
+      for (const c of QUALIF.campos || []) {
+        if (!ficha[c.chave] || c.chave === "observacoes") continue;
+        fields += `<div class="summary-field"><span class="summary-label">${escHtml(c.rotulo)}</span><span class="summary-value">${escHtml((QUALIF.valores || {})[ficha[c.chave]] || ficha[c.chave])}</span></div>`;
+      }
+      if (ficha.observacoes) fields += `<div class="summary-text">${escHtml(ficha.observacoes)}</div>`;
+    }
     if (resumo)    fields += `<div class="summary-text">${escHtml(resumo)}</div>`;
     panel.innerHTML = `<div class="lead-summary-inner">${fields}</div>`;
     summaryOpen = true;
@@ -878,7 +905,7 @@
           const content = data.content || "";
           if (content.includes("[VISITA_SOLICITADA]")) {
             leadColumns[data.phone] = "visita";
-          } else if (content.includes("[LEAD_CAPTURADO]")) {
+          } else if (content.includes("[LEAD_CAPTURADO]") || content.includes("[LEAD_QUALIFICADO]")) {
             leadColumns[data.phone] = "orcamento";
           } else if (data.role === "user" && leadColumns[data.phone] === "novo") {
             leadColumns[data.phone] = "em_atendimento";
@@ -999,6 +1026,7 @@
   // atende ali). Preenchido pela marca dinâmica logo abaixo; o valor inicial é
   // só o que aparece no piscar antes da rota "/" responder.
   let AGENTE = "Olivia";
+  let QUALIF = { ativa: false, campos: [], valores: {} };
 
   // ─── MARCA DINÂMICA ──────────────────────────────────────────
   // Puxa o nome da empresa do próprio backend (rota "/") em vez de fixar no HTML —
@@ -1006,8 +1034,12 @@
   (async () => {
     try {
       const r = await fetch("/");
-      const { company, agent } = await r.json();
+      const { company, agent, qualificacao } = await r.json();
       if (agent) AGENTE = agent;
+      if (qualificacao) {
+        document.getElementById("fila-link").style.display = "";
+        fetch("/api/qualificacao").then(x => x.json()).then(q => { QUALIF = q; }).catch(() => {});
+      }
       if (company) {
         document.title = `${company} — Painel ${AGENTE}`;
         const brandEl = document.querySelector(".brand-name");
@@ -1023,7 +1055,11 @@
   })();
 
   // ─── INIT ────────────────────────────────────────────────────
-  fetchLeads();
+  // ?phone= abre a conversa direto: é o link "Ver conversa" da fila de leads.
+  fetchLeads().then(() => {
+    const alvo = new URLSearchParams(location.search).get("phone");
+    if (alvo) selectLead(alvo);
+  });
   connectSSE();
   setInterval(() => { fetchLeads(); loadMsgs(true); }, 6000);
 </script>

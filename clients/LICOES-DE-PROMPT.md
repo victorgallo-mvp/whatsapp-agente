@@ -183,3 +183,15 @@ da conversa é ruído perto disso.
 Cada regra adicionada depois de um bug vira custo em toda mensagem, para
 sempre. Um prompt cresceu 64% em sete semanas assim. Cache resolve a maior
 parte, mas o tamanho ainda importa.
+
+## 15. Extrator estruturado preenche por ausência: exija a citação
+
+Pedir ao modelo "registre só o que o cliente disse" não segura. No agente de
+triagem da Protásio, a primeira mensagem ("tem CB 500 aí?") saiu da extração
+como `cnh=nao, entrada=nao, prazo=pesquisando`. Como a ficha é mesclada turno a
+turno, "sem habilitação" grudou no lead até o fim.
+
+O que resolveu foi estrutural, não textual: cada campo de opções volta como
+`{valor, trecho}`, e o servidor descarta o valor cujo trecho não aparece na
+fala do cliente (`trechoConfere` em `server.js`). O log mostra cada descarte.
+É o item 1 aplicado à extração: tire a dedução do caminho.

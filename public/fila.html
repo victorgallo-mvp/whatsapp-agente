@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fila de leads</title>
+<style>
+  /* Mesma paleta do dashboard.html (marca Feeling): verde só em marca, foco e
+     ação. A temperatura do lead é estado, não série: sempre com texto junto,
+     nunca só cor. */
+  :root {
+    --cyan:     #04D81A;
+    --cyan-dk:  #03A814;
+    --cyan-lt:  #EAFBEC;
+    --dark:     #1C1C1E;
+    --dark2:    #374151;
+    --surface:  #F7F8FA;
+    --border:   #E4E7EC;
+    --text:     #111827;
+    --muted:    #6B7280;
+    --muted2:   #9CA3AF;
+    --white:    #FFFFFF;
+    --red:      #DC2626;
+    --red-lt:   #FEF2F2;
+    --amber:    #B45309;
+    --amber-lt: #FFF7ED;
+    --blue:     #1D4ED8;
+    --blue-lt:  #EFF6FF;
+    --quente:    #0A7A1C;  --quente-lt:  #EAFBEC;  --quente-bd: #04D81A;
+    --morno:     #B45309;  --morno-lt:   #FFF7ED;  --morno-bd:  #F59E0B;
+    --frio:      #1D4ED8;  --frio-lt:    #EFF6FF;  --frio-bd:   #93C5FD;
+    --semdados:  #6B7280;  --semdados-lt:#F3F4F6;  --semdados-bd:#D1D5DB;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--surface); color: var(--text);
+    min-height: 100vh; display: flex; flex-direction: column;
+  }
+
+  header {
+    background: var(--dark); color: #fff;
+    padding: 0 24px; height: 56px;
+    display: flex; align-items: center; gap: 16px;
+    flex-shrink: 0; border-bottom: 1px solid rgba(255,255,255,.08);
+    position: sticky; top: 0; z-index: 20;
+  }
+  .header-brand { display: flex; flex-direction: column; gap: 1px; line-height: 1; }
+  .brand-name { font-size: 17px; font-weight: 900; letter-spacing: 2px; color: #fff; text-transform: uppercase; }
+  .brand-name .cc { color: var(--cyan); }
+  .brand-sub { font-size: 9px; color: rgba(255,255,255,.38); letter-spacing: 1.2px; text-transform: uppercase; margin-top: 2px; }
+  .header-links { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  .header-links a {
+    color: rgba(255,255,255,.75); text-decoration: none; font-size: 12px; font-weight: 600;
+    padding: 5px 10px; border-radius: 7px; border: 1px solid rgba(255,255,255,.14);
+  }
+  .header-links a:hover { background: rgba(255,255,255,.08); color: #fff; }
+  #conn-status { font-size: 10.5px; padding: 3px 10px; border-radius: 999px; font-weight: 600; letter-spacing: .2px; }
+  #conn-status.connected    { background: rgba(4,216,26,.15);  color: var(--cyan); border: 1px solid rgba(4,216,26,.3); }
+  #conn-status.reconnecting { background: rgba(251,191,36,.15); color: #fbbf24;    border: 1px solid rgba(251,191,36,.3); }
+  #conn-status.disconnected { background: rgba(220,38,38,.15);  color: #f87171;    border: 1px solid rgba(220,38,38,.25); }
+
+  main { flex: 1; width: 100%; max-width: 1180px; margin: 0 auto; padding: 18px 24px 40px; }
+
+  /* ─── TOTAIS ─────────────────────────── */
+  .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
+  .tile {
+    background: var(--white); border: 1px solid var(--border); border-radius: 11px;
+    padding: 12px 14px; cursor: pointer; border-left: 4px solid var(--border);
+    transition: box-shadow .12s, border-color .12s;
+  }
+  .tile:hover { box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+  .tile.ativo { box-shadow: 0 0 0 2px rgba(4,216,26,.25); border-color: var(--cyan); }
+  .tile .n { font-size: 26px; font-weight: 800; line-height: 1.1; }
+  .tile .l { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); margin-top: 3px; }
+  .tile .s { font-size: 11px; color: var(--muted2); margin-top: 2px; }
+  .tile.quente   { border-left-color: var(--quente-bd); }   .tile.quente .n   { color: var(--quente); }
+  .tile.morno    { border-left-color: var(--morno-bd); }    .tile.morno .n    { color: var(--morno); }
+  .tile.frio     { border-left-color: var(--frio-bd); }     .tile.frio .n     { color: var(--frio); }
+  .tile.sem_dados{ border-left-color: var(--semdados-bd); } .tile.sem_dados .n{ color: var(--semdados); }
+
+  /* ─── TOOLBAR ────────────────────────── */
+  .toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+  .toolbar input {
+    flex: 1; min-width: 200px; max-width: 320px;
+    padding: 7px 11px; border: 1px solid var(--border); border-radius: 7px;
+    font-size: 13px; outline: none; background: var(--white);
+  }
+  .toolbar input:focus { border-color: var(--cyan); }
+  .chip {
+    font-size: 12px; font-weight: 600; padding: 5px 11px; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--white); color: var(--muted); cursor: pointer;
+  }
+  .chip.ativo { background: var(--dark); color: #fff; border-color: var(--dark); }
+  .toolbar .hint { font-size: 11.5px; color: var(--muted2); margin-left: auto; }
+
+  /* ─── LISTA ──────────────────────────── */
+  .lista { display: flex; flex-direction: column; gap: 8px; }
+  .lead {
+    background: var(--white); border: 1px solid var(--border); border-radius: 11px;
+    padding: 12px 14px; display: grid; gap: 10px 14px;
+    grid-template-columns: 92px 1fr auto;
+    border-left: 4px solid var(--semdados-bd);
+  }
+  .lead.quente    { border-left-color: var(--quente-bd); }
+  .lead.morno     { border-left-color: var(--morno-bd); }
+  .lead.frio      { border-left-color: var(--frio-bd); }
+  .lead.aguardando { background: #FFFDF5; }
+
+  .nota { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
+  .temp {
+    font-size: 10.5px; font-weight: 800; letter-spacing: .6px; text-transform: uppercase;
+    padding: 3px 8px; border-radius: 999px; border: 1px solid transparent; white-space: nowrap;
+  }
+  .temp.quente    { background: var(--quente-lt);   color: var(--quente);   border-color: var(--quente-bd); }
+  .temp.morno     { background: var(--morno-lt);    color: var(--morno);    border-color: var(--morno-bd); }
+  .temp.frio      { background: var(--frio-lt);     color: var(--frio);     border-color: var(--frio-bd); }
+  .temp.sem_dados { background: var(--semdados-lt); color: var(--semdados); border-color: var(--semdados-bd); }
+  .score { font-size: 22px; font-weight: 800; line-height: 1; }
+  .score small { font-size: 11px; font-weight: 600; color: var(--muted2); }
+  .barra { width: 76px; height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; }
+  .barra i { display: block; height: 100%; background: var(--dark2); border-radius: 2px; }
+  .lead.quente .barra i { background: var(--quente-bd); }
+  .lead.morno  .barra i { background: var(--morno-bd); }
+  .lead.frio   .barra i { background: var(--frio-bd); }
+
+  .quem { min-width: 0; }
+  .quem-top { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .nome { font-size: 14px; font-weight: 700; }
+  .fone { font-size: 12px; color: var(--muted); }
+  .tempo { font-size: 11px; color: var(--muted2); }
+  .estado {
+    font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 999px;
+    background: var(--amber-lt); color: var(--amber); border: 1px solid #FCD34D;
+  }
+  .estado.ia { background: var(--cyan-lt); color: var(--cyan-dk); border-color: #A7F3B0; }
+  .campos { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 7px; }
+  .campo { font-size: 12.5px; }
+  .campo b { font-weight: 600; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .3px; margin-right: 4px; }
+  .campo.neg { color: var(--red); }
+  .motivos { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 7px; }
+  .motivo {
+    font-size: 11px; padding: 2px 8px; border-radius: 6px;
+    background: var(--surface); border: 1px solid var(--border); color: var(--dark2);
+  }
+  .motivo.alerta { background: var(--red-lt); border-color: #FECACA; color: var(--red); }
+  .falta { font-size: 11.5px; color: var(--muted); margin-top: 6px; }
+  .falta b { color: var(--amber); font-weight: 700; }
+  .obs { font-size: 12px; color: var(--muted); margin-top: 6px; font-style: italic; }
+
+  .acoes { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
+  .acoes a {
+    text-decoration: none; font-size: 12px; font-weight: 700; text-align: center;
+    padding: 7px 12px; border-radius: 7px; white-space: nowrap;
+  }
+  .btn-wpp  { background: var(--cyan); color: #fff; }
+  .btn-wpp:hover { background: var(--cyan-dk); }
+  .btn-conv { background: var(--white); color: var(--dark2); border: 1px solid var(--border); }
+  .btn-conv:hover { background: var(--surface); }
+
+  .vazio { padding: 40px 12px; text-align: center; color: var(--muted2); font-size: 13px; }
+  .aviso {
+    background: var(--amber-lt); border: 1px solid #FCD34D; color: var(--amber);
+    border-radius: 10px; padding: 12px 14px; font-size: 13px; line-height: 1.5; margin-bottom: 14px;
+  }
+  .aviso a { color: inherit; }
+
+  @media (max-width: 768px) {
+    header { padding: 0 14px; }
+    .header-links a { padding: 5px 8px; font-size: 11px; }
+    main { padding: 12px 12px 32px; }
+    .tiles { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .tile .n { font-size: 22px; }
+    .toolbar input { max-width: none; font-size: 16px; }
+    .toolbar .hint { display: none; }
+    .lead { grid-template-columns: 1fr; }
+    .nota { flex-direction: row; align-items: center; gap: 10px; }
+    .acoes { flex-direction: row; }
+    .acoes a { flex: 1; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-brand">
+    <span class="brand-name"><span class="cc">F</span>ILA</span>
+    <span class="brand-sub">Fila de leads</span>
+  </div>
+  <div class="header-links">
+    <a href="/dashboard">Conversas</a>
+    <span id="conn-status" class="disconnected">Conectando...</span>
+  </div>
+</header>
+
+<main>
+  <div id="aviso-sem-qualificacao" class="aviso" style="display:none">
+    Este agente não tem triagem estruturada configurada, então a fila não tem o que ordenar.
+    As conversas continuam no <a href="/dashboard">painel</a>.
+  </div>
+
+  <div class="tiles" id="tiles">
+    <div class="tile quente"    onclick="setFiltro('quente')"><div class="n" id="n-quente">–</div><div class="l">Quentes</div><div class="s">prontos para o vendedor</div></div>
+    <div class="tile morno"     onclick="setFiltro('morno')"><div class="n" id="n-morno">–</div><div class="l">Mornos</div><div class="s">falta pouco</div></div>
+    <div class="tile frio"      onclick="setFiltro('frio')"><div class="n" id="n-frio">–</div><div class="l">Frios</div><div class="s">pesquisando ou travado</div></div>
+    <div class="tile sem_dados" onclick="setFiltro('sem_dados')"><div class="n" id="n-sem_dados">–</div><div class="l">Sem triagem</div><div class="s">conversa curta ainda</div></div>
+  </div>
+
+  <div class="toolbar">
+    <input type="text" id="busca" placeholder="Buscar por nome, telefone, moto ou cidade...">
+    <button class="chip ativo" data-f="todos" onclick="setFiltro('todos')">Todos</button>
+    <button class="chip" data-f="aguardando" onclick="setFiltro('aguardando')">Aguardando vendedor</button>
+    <button class="chip" data-f="hoje" onclick="setFiltro('hoje')">Hoje</button>
+    <span class="hint">Ordem: temperatura, depois nota, depois quem falou por último.</span>
+  </div>
+
+  <div class="lista" id="lista"><div class="vazio">Carregando...</div></div>
+</main>
+
+<script>
+  let leads = [];
+  let filtro = "todos";
+  let CONFIG = { ativa: false, campos: [], valores: {} };
+  let AGENTE = "a IA";
+  let pollFallback = null;
+
+  const ORDEM_TEMP = { quente: 0, morno: 1, frio: 2, sem_dados: 3 };
+  const ROTULO_TEMP = { quente: "Quente", morno: "Morno", frio: "Frio", sem_dados: "Sem triagem" };
+  // Campos que aparecem na linha do lead, nesta ordem. "nome", "cidade" e
+  // "observacoes" têm lugar próprio no cartão. O que o cliente não declarou
+  // nos rótulos cai no nome da chave.
+  const OCULTOS = new Set(["nome", "observacoes", "interesse", "modelo"]);
+  // Valores que merecem destaque de alerta pro vendedor.
+  const NEGATIVOS = new Set(["restrito", "nao", "pesquisando"]);
+
+  function escHtml(s) {
+    return String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  }
+  function timeAgo(iso) {
+    if (!iso) return "";
+    const m = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+    if (m < 1)  return "agora";
+    if (m < 60) return m + " min";
+    const h = Math.floor(m / 60);
+    if (h < 24) return h + " h";
+    const d = Math.floor(h / 24);
+    return d === 1 ? "ontem" : d + " dias";
+  }
+  function ehHoje(iso) {
+    if (!iso) return false;
+    return new Date(iso).toDateString() === new Date().toDateString();
+  }
+  function foneWA(phone) {
+    const d = String(phone || "").replace(/\D/g, "");
+    return d.startsWith("55") ? d : "55" + d;
+  }
+  function tempDe(l) { return l.temperatura || "sem_dados"; }
+  function aguardando(l) { return l.stage === "qualificado" && l.olivia_ativa === false; }
+
+  function setFiltro(f) {
+    filtro = (filtro === f && f !== "todos") ? "todos" : f;
+    document.querySelectorAll(".chip").forEach(c => c.classList.toggle("ativo", c.dataset.f === filtro));
+    document.querySelectorAll(".tile").forEach(t => t.classList.toggle("ativo", t.classList.contains(filtro)));
+    render();
+  }
+
+  function cardHtml(l) {
+    const temp   = tempDe(l);
+    const q      = l.qualificacao || {};
+    const campos = q.campos || {};
+    const score  = l.score ?? null;
+    const nome   = l.nome || campos.nome || l.phone;
+    const cidade = campos.cidade ? ` · ${escHtml(campos.cidade)}` : "";
+    const esperando = aguardando(l);
+
+    const camposHtml = CONFIG.campos
+      .filter(c => !OCULTOS.has(c.chave) && campos[c.chave])
+      .map(c => {
+        const bruto = campos[c.chave];
+        const neg   = NEGATIVOS.has(bruto) && c.chave !== "tem_troca";
+        return `<span class="campo ${neg ? "neg" : ""}"><b>${escHtml(c.rotulo)}</b>${escHtml(CONFIG.valores[bruto] || bruto)}</span>`;
+      }).join("");
+
+    const motivosHtml = (q.motivos || []).map(m =>
+      `<span class="motivo ${/restri|sem (habilita|entrada)|pesquisando/i.test(m) ? "alerta" : ""}">${escHtml(m)}</span>`
+    ).join("");
+    const faltaHtml = (q.faltando || []).length
+      ? `<div class="falta"><b>Falta perguntar:</b> ${escHtml(q.faltando.join(", "))}</div>` : "";
+    const obsHtml = campos.observacoes ? `<div class="obs">${escHtml(campos.observacoes)}</div>` : "";
+
+    const estado = esperando
+      ? `<span class="estado">Aguardando vendedor</span>`
+      : l.olivia_ativa === false ? `<span class="estado">Com atendente</span>`
+      : `<span class="estado ia">${escHtml(AGENTE)} atendendo</span>`;
+
+    return `<div class="lead ${temp} ${esperando ? "aguardando" : ""}">
+      <div class="nota">
+        <span class="temp ${temp}">${ROTULO_TEMP[temp]}</span>
+        <div class="score">${score === null ? "–" : score}<small>/100</small></div>
+        <div class="barra"><i style="width:${score === null ? 0 : score}%"></i></div>
+      </div>
+      <div class="quem">
+        <div class="quem-top">
+          <span class="nome">${escHtml(nome)}</span>
+          <span class="fone">${escHtml(l.phone)}${cidade}</span>
+          <span class="tempo">${timeAgo(l.last_interaction_at)}</span>
+          ${estado}
+        </div>
+        ${(campos.modelo || camposHtml) ? `<div class="campos">${campos.modelo ? `<span class="campo"><b>Moto</b>${escHtml(campos.modelo)}</span>` : ""}${camposHtml}</div>` : ""}
+        ${motivosHtml ? `<div class="motivos">${motivosHtml}</div>` : ""}
+        ${faltaHtml}
+        ${obsHtml}
+      </div>
+      <div class="acoes">
+        <a class="btn-wpp" href="https://wa.me/${foneWA(l.phone)}" target="_blank" rel="noopener">Abrir WhatsApp</a>
+        <a class="btn-conv" href="/dashboard?phone=${encodeURIComponent(l.phone)}">Ver conversa</a>
+      </div>
+    </div>`;
+  }
+
+  function render() {
+    const q = document.getElementById("busca").value.toLowerCase().trim();
+    const total = { quente: 0, morno: 0, frio: 0, sem_dados: 0 };
+    for (const l of leads) total[tempDe(l)]++;
+    for (const k of Object.keys(total)) document.getElementById("n-" + k).textContent = total[k];
+
+    let itens = leads.filter(l => {
+      if (filtro === "aguardando") return aguardando(l);
+      if (filtro === "hoje")       return ehHoje(l.last_interaction_at);
+      if (filtro !== "todos")      return tempDe(l) === filtro;
+      return true;
+    });
+    if (q) {
+      itens = itens.filter(l => {
+        const c = (l.qualificacao || {}).campos || {};
+        return [l.nome, l.phone, c.nome, c.modelo, c.cidade, c.moto_troca].some(v => (v || "").toLowerCase().includes(q));
+      });
+    }
+    itens.sort((a, b) =>
+      (ORDEM_TEMP[tempDe(a)] - ORDEM_TEMP[tempDe(b)]) ||
+      ((b.score ?? -1) - (a.score ?? -1)) ||
+      (new Date(b.last_interaction_at || 0) - new Date(a.last_interaction_at || 0))
+    );
+
+    const el = document.getElementById("lista");
+    el.innerHTML = itens.length ? itens.map(cardHtml).join("") : `<div class="vazio">Nenhum lead neste filtro.</div>`;
+  }
+
+  async function fetchLeads() {
+    try {
+      const r = await fetch("/api/leads");
+      if (!r.ok) return;
+      const data = await r.json();
+      if (!Array.isArray(data)) return;
+      leads = data;
+      render();
+    } catch (e) { console.error("fetchLeads:", e); }
+  }
+
+  function connectSSE() {
+    const statusEl = document.getElementById("conn-status");
+    statusEl.textContent = "Conectando..."; statusEl.className = "reconnecting";
+    const es = new EventSource("/api/stream");
+    es.onopen = () => {
+      statusEl.textContent = "Tempo real"; statusEl.className = "connected";
+      clearInterval(pollFallback); pollFallback = null;
+    };
+    es.onmessage = (e) => {
+      let data; try { data = JSON.parse(e.data); } catch { return; }
+      if (data.type === "leads_update") fetchLeads();
+      if (data.type === "message") {
+        const l = leads.find(x => x.phone === data.phone);
+        if (l) { l.last_interaction_at = data.created_at; render(); }
+      }
+    };
+    es.onerror = () => {
+      statusEl.textContent = "Reconectando..."; statusEl.className = "reconnecting";
+      if (!pollFallback) pollFallback = setInterval(fetchLeads, 5000);
+    };
+  }
+
+  document.getElementById("busca").addEventListener("input", render);
+
+  (async () => {
+    try {
+      const [info, cfg] = await Promise.all([fetch("/").then(r => r.json()), fetch("/api/qualificacao").then(r => r.json())]);
+      if (info.agent) AGENTE = info.agent;
+      if (info.company) {
+        document.title = `${info.company} — Fila de leads`;
+        document.querySelector(".brand-name").innerHTML = `<span class="cc">${escHtml(info.company[0])}</span>${escHtml(info.company.slice(1).toUpperCase())}`;
+      }
+      CONFIG = cfg;
+      if (!cfg.ativa) document.getElementById("aviso-sem-qualificacao").style.display = "";
+    } catch (e) { console.error("config:", e); }
+    await fetchLeads();
+    connectSSE();
+    setInterval(fetchLeads, 15000);
+  })();
+</script>
+</body>
+</html>
