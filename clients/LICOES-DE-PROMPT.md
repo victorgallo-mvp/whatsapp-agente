@@ -9,6 +9,32 @@ Leia antes de escrever um `clients/<slug>.js` novo.
 
 ---
 
+## O princípio que organiza todos os outros
+
+O que determina se uma instrução vai ser obedecida **não é ela ser positiva ou
+negativa**. É se o modelo precisa inferir alguma coisa para cumpri-la.
+
+| Tipo | Confiabilidade | Exemplo que funcionou / falhou |
+|---|---|---|
+| Dado estrutural | alta | valor do acessório escrito na linha do produto |
+| Proibição concreta | média-alta | "não diga 'não tenho registro'" — 0 violações em 187 respostas |
+| Instrução positiva concreta | média | "responda em três partes, nesta ordem" |
+| Qualquer coisa que exija julgamento | baixa | "a 270 MXi e a 250 RXi não estão na lista" — falhou em 4 de 7 |
+
+Repare que há instrução negativa nos dois extremos. "Não diga a frase X" segura
+porque o modelo consegue verificar se está prestes a dizer X. "Esses dois não
+estão na lista" falha porque, para obedecer, ele precisa saber o que mais está
+fora — e isso ninguém disse.
+
+"Não calcule de cabeça" é negativa e nunca funcionou. O que funcionou foi tirar
+a conta do caminho.
+
+**Antes de escrever qualquer regra, pergunte: para obedecer isso, o modelo
+precisa descobrir alguma coisa?** Se precisar, a regra vai falhar em algum
+momento, e o conserto é mudar o dado, não reforçar o texto.
+
+---
+
 ## 1. Se a resposta exige derivar um número, tire a derivação do caminho
 
 A regra em texto não segura. Pedir "tenha cuidado ao comparar valores" falha;
