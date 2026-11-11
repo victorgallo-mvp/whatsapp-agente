@@ -183,6 +183,23 @@ Responda sempre em português.`,
   regrasCriticas: `LEMBRETES QUE VALEM ACIMA DE TUDO:
 Você não afirma estoque, preço, ano nem quilometragem de moto nenhuma. Quem confirma é o vendedor.
 Você não diz taxa de juros, não calcula parcela e não diz que o crédito aprova.
+
+QUANTO CABE NO BOLSO, E A COMPROVAÇÃO DE RENDA:
+
+Quem vai financiar, você pergunta duas coisas, espalhadas na conversa e nunca juntas:
+Quanto de parcela cabe no mês dela. Pergunte o valor que ela pretende pagar, não o número de parcelas | nunca pergunte "quer em 24x ou 48x", nem ofereça prazo: prazo quem define é o banco com o vendedor.
+Ao perguntar, dê a referência que ajuda ela a se situar: no financiamento a parcela normalmente não passa de um terço da renda. Isso é orientação geral do mercado, dita uma vez e sem número de ninguém. Algo como: "Pra eu já deixar anotado: qual valor de parcela caberia no teu mês? Em geral o financiamento trabalha com parcela de até um terço da renda."
+Se ela tem como comprovar renda: contracheque, extrato ou declaração. Pergunte simples: "tu consegue comprovar renda, tipo contracheque ou extrato?" Não peça documento, não peça valor de salário, não peça print.
+Se ela não comprova, não trate como problema nem avise que fica difícil: registre e siga. Existe caminho para esse caso, e quem conduz é o vendedor.
+
+Pergunte também, quando couber na conversa: a idade dela, e o ano da moto que ela quer. Encaixe natural, uma de cada vez, nunca como formulário.
+
+A NOTA E A ANÁLISE SÃO SUAS, NUNCA DELA:
+
+Existe uma régua interna que ordena os leads para o vendedor. Ela é NOSSA, serve para a equipe priorizar, e o cliente jamais fica sabendo dela.
+Está proibido: dizer que ele tem chance alta ou baixa, citar porcentagem de aprovação, dizer que "o perfil dele é bom", dizer que vai ou não passar, mencionar nome de financeira, ou explicar o que pesa na análise.
+Se perguntarem se vão ser aprovados, a resposta é honesta e curta: quem analisa é o banco, e o vendedor conduz isso com ele. Nada além disso.
+Nós não somos financeira. Você coleta o que o vendedor precisa para levar o caso adiante, e nada do que você anota vira veredito.
 Uma pergunta por mensagem. Na mensagem em que emite a tag, nenhuma pergunta, nem o nome.
 Se escreveu que vai passar para o vendedor, a linha [LEAD_QUALIFICADO] está nessa mesma mensagem.`,
 
@@ -210,6 +227,11 @@ Se escreveu que vai passar para o vendedor, a linha [LEAD_QUALIFICADO] está nes
       cnh:           { opcoes: ["sim", "nao", "tirando"], desc: "habilitação para moto" },
       cpf:           { opcoes: ["livre", "restrito", "nao_sabe"],
                        desc: "situação do CPF para consulta de crédito, só se ela respondeu" },
+      idade:         { desc: "idade em anos, só se ela disse (ex: 24)", conferir: true },
+      renda:         { opcoes: ["comprovavel", "sem_comprovante", "nao_sabe"],
+                       desc: "comprovavel se tem contracheque, extrato ou declaração; sem_comprovante se trabalha por conta e não consegue comprovar" },
+      prestacao:     { desc: "valor de parcela mensal que ela disse que cabe no orçamento (ex: 600 reais)", conferir: true },
+      ano_moto:      { desc: "ano da moto que ela quer, se citou (ex: 2021)", conferir: true },
       prazo:         { opcoes: ["imediato", "ate_30_dias", "pesquisando"],
                        desc: "imediato se é para essa semana ou 'agora'; ate_30_dias se é para esse mês; pesquisando se ainda está só vendo" },
       observacoes:   { desc: "uma linha com o que o vendedor precisa saber e não cabe nos campos" },
@@ -220,7 +242,8 @@ Se escreveu que vai passar para o vendedor, a linha [LEAD_QUALIFICADO] está nes
       nome: "Nome", cidade: "Cidade", interesse: "Interesse", modelo: "Moto",
       pagamento: "Pagamento", tem_troca: "Troca", moto_troca: "Moto na troca",
       entrada: "Entrada", valor_entrada: "Valor da entrada", cnh: "CNH", cpf: "CPF",
-      prazo: "Prazo", observacoes: "Obs.",
+      prazo: "Prazo", idade: "Idade", renda: "Renda", prestacao: "Parcela que cabe",
+      ano_moto: "Ano da moto", observacoes: "Obs.",
     },
     valores: {
       modelo_definido: "modelo definido", categoria: "tipo definido", indefinido: "não decidiu",
@@ -228,6 +251,7 @@ Se escreveu que vai passar para o vendedor, a linha [LEAD_QUALIFICADO] está nes
       sim: "sim", nao: "não", tirando: "tirando",
       livre: "livre", restrito: "com restrição", nao_sabe: "não sabe",
       imediato: "essa semana", ate_30_dias: "esse mês", pesquisando: "pesquisando",
+      comprovavel: "comprova renda", sem_comprovante: "sem comprovante", nao_sabe: "não sabe",
     },
 
     // Régua de 0 a 100. Os pesos refletem o que decide a venda numa loja de
@@ -285,6 +309,36 @@ Se escreveu que vai passar para o vendedor, a linha [LEAD_QUALIFICADO] está nes
       else if (c.interesse === "categoria") { score += 5; if (c.modelo) motivos.push(`Procura ${c.modelo}`); }
       else if (c.interesse === "indefinido") { motivos.push("Ainda não sabe qual moto"); }
       else faltando.push("qual moto");
+
+      // ── CAPACIDADE DE CRÉDITO (até 20) — só para quem financia ──────────
+      // Isto é REFERÊNCIA INTERNA DO VENDEDOR. Não é análise de crédito e não
+      // vira promessa: quem aprova é o banco. O que fazemos aqui é separar
+      // quem tem mais chance de passar de quem vai precisar de caminho
+      // alternativo (mais documento, avalista, financeira menos convencional).
+      // Critérios vindos do material da loja: idade mínima de 21 nas principais,
+      // renda comprovável, e parcela que não passe de 1/3 da renda.
+      if (financia) {
+        const idade = parseInt(String(c.idade || "").replace(/\D/g, ""), 10);
+        if (!isNaN(idade)) {
+          if (idade >= 21)      { score += 8; }
+          else if (idade >= 18) { motivos.push(`${idade} anos: abaixo do mínimo das principais financeiras`); }
+        } else faltando.push("idade");
+
+        if (c.renda === "comprovavel")           { score += 12; motivos.push("Comprova renda"); }
+        else if (c.renda === "sem_comprovante")  { motivos.push("Sem comprovante de renda: caminho alternativo"); }
+        else if (c.renda === "nao_sabe")         { score += 3; }
+        else faltando.push("renda");
+
+        // Idade da moto: até 7 anos de uso é o que as principais aceitam melhor.
+        // Relativo ao ano corrente de propósito — a régua antiga era "2019 a
+        // 2025" e envelheceu sozinha.
+        const ano = parseInt(String(c.ano_moto || "").replace(/\D/g, ""), 10);
+        if (!isNaN(ano) && ano > 1990) {
+          const uso = new Date().getFullYear() - ano;
+          if (uso <= 7) score += 5;
+          else motivos.push(`Moto com ${uso} anos de uso: reduz a chance no financiamento`);
+        }
+      }
 
       if (travaCredito) score = Math.min(score, 25);
       // Quem disse que está só pesquisando é frio, não importa o resto: "vou
