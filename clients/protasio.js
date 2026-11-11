@@ -353,7 +353,14 @@ Se escreveu que vai passar para o vendedor, a linha [LEAD_QUALIFICADO] está nes
         }
       }
 
-      if (travaCredito) score = Math.min(score, 25);
+      // Restrição é PENALIDADE, não porta fechada: a loja confirmou em 11/11/2026
+      // que existe caminho (avalista, financeira menos convencional, mais
+      // documento). Antes isto era um teto de 25, e derrubava para "frio" um
+      // lead que compra essa semana, tem entrada e comprova renda — ficava
+      // atrás de quem só está pesquisando. O vendedor precisa ver esse lead no
+      // topo COM o aviso, não enterrado.
+      if (travaCredito) score -= 30;
+      score = Math.max(0, score);
       // Quem disse que está só pesquisando é frio, não importa o resto: "vou
       // pagar à vista, ano que vem" já chegou a 50 pontos (morno) antes desta trava.
       if (c.prazo === "pesquisando") score = Math.min(score, 30);
