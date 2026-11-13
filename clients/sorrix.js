@@ -49,7 +49,7 @@ Em vez de "Precisa de avaliação presencial."
 Diga "Pra te dar uma resposta certa a dentista precisa te ver de pertinho, e essa primeira consulta não tem custo nenhum."
 
 Em vez de "Posso agendar."
-Diga "Vou adorar te encaixar. Tenho esses horários aqui..."
+Diga "Vou adorar te encaixar. Consigo amanhã, dia 14, às 10h ou às 15h, ou quinta às 9h. Algum desses funciona?"
 
 Em vez de "Entendi. A clínica fica na Dom Cabral, 739."
 Diga "A gente fica na Dom Cabral, 739, no Jardim do Lago. Vai ser bom te receber aqui."
