@@ -227,7 +227,7 @@ Cada regra adicionada depois de um bug vira custo em toda mensagem, para
 sempre. Um prompt cresceu 64% em sete semanas assim. Cache resolve a maior
 parte, mas o tamanho ainda importa.
 
-## 15. Extrator estruturado preenche por ausência: exija a citação
+## 16. Extrator estruturado preenche por ausência: exija a citação
 
 Pedir ao modelo "registre só o que o cliente disse" não segura. No agente de
 triagem da Protásio, a primeira mensagem ("tem CB 500 aí?") saiu da extração
@@ -238,3 +238,54 @@ O que resolveu foi estrutural, não textual: cada campo de opções volta como
 `{valor, trecho}`, e o servidor descarta o valor cujo trecho não aparece na
 fala do cliente (`trechoConfere` em `server.js`). O log mostra cada descarte.
 É o item 1 aplicado à extração: tire a dedução do caminho.
+
+## 17. "O mais próximo possível" não sabe que amanhã é sábado
+
+Na Sorrix a instrução nova dizia "sempre ofereça a data mais próxima, comece
+pelo dia seguinte", e 100 linhas acima já havia "sábado só com combinação
+prévia". Numa sexta-feira, as duas juntas fizeram a IA oferecer sábado como
+horário normal em 4 de 10 simulações, inclusive para quem nunca pediu.
+
+O erro não foi o texto: foi mandar o modelo derivar se o dia seguinte é dia de
+atendimento. A correção foi escrever o calendário em vez do advérbio —
+"atende de segunda a sexta", "se hoje for sexta, o próximo horário que você
+oferece é segunda", e "nunca ofereça sábado por conta própria".
+
+É o item 1 outra vez, agora em data: trocar "o mais próximo" por "o próximo
+dia de atendimento" tira a conta do caminho.
+
+Da mesma leva: pergunta de duas pontas é porta de entrada para o erro. Ela
+oferecia "prefere durante a semana ou no fim de semana?" e assim mesma abria a
+opção que não devia existir. Quem oferece três horários concretos não tem como
+oferecer sábado sem querer.
+
+## 18. Escopo de exceção aberto vira exceção para tudo
+
+O bloco de caso cirúrgico listava "cirurgia, extração, implante, prótese ou
+qualquer procedimento que não seja a avaliação". A IA leu o "qualquer" e
+transferiu uma paciente com dente quebrado e dor, justificando que "precisa de
+mais tempo na cadeira" — algo que ninguém disse e que ela não tem como saber.
+
+Perder quem está com dor é o pior caso possível num agente de agendamento.
+
+A correção fecha os dois lados: "são exatamente estes cinco, e mais nenhum" de
+um lado, e um bloco explícito do outro dizendo que dor, dente quebrado,
+inchaço e urgência **são** avaliação e se agendam normalmente. Escopo de
+exceção precisa de borda nas duas direções, senão o modelo decide onde ela
+termina.
+
+## 19. A lição de não repetir pergunta já falhou em três agentes
+
+Corrigida na TrailLand, depois reaparecida na Protásio ("tu tem algum valor
+para dar de entrada?" três vezes seguidas), depois reaparecida na Sorrix ("me
+passa seu nome completo" quatro vezes seguidas, enquanto a paciente perguntava
+se podia levar a mãe e qual era o endereço).
+
+Toda vez a causa foi a mesma: o agente novo nasceu sem o bloco. É o item 12 em
+estado puro, e o conserto é checklist, não texto. **Todo agente que faz
+pergunta precisa do bloco NÃO REPITA A MESMA PERGUNTA desde o primeiro dia.**
+
+Vale também para campo opcional: se um dado é bom ter mas não é obrigatório,
+diga quantas vezes pedir ("peça uma vez, junto com outra coisa; se não vier,
+deixe passar"). Sem o número, "idealmente" vira insistência.
+
