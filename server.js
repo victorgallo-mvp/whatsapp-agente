@@ -50,6 +50,35 @@ const NOTIFICACOES = {
 const MODO_OBSERVACAO = process.env.MODO_OBSERVACAO === "true";
 const observados = [];
 
+async function registrarObservacao(raw, body, foneBody) {
+  try {
+    const k = raw?.data?.key || {};
+    const conhecido = foneBody
+      ? await db.query(`SELECT nome FROM contatos_conhecidos WHERE phone = $1`, [foneBody])
+      : { rows: [] };
+    const reg = {
+      em: new Date().toISOString(),
+      sentido: body.fromMe ? "ATENDENTE -> paciente" : "paciente -> clinica",
+      remoteJid_sufixo: (String(k.remoteJid || "").match(/@.+$/) || ["(sem @)"])[0],
+      addressingMode: k.addressingMode || "(ausente)",
+      tem_remoteJidAlt: !!k.remoteJidAlt,
+      tem_senderPn: !!k.senderPn,
+      telefone_resolvido: foneBody ? foneBody.slice(0, 4) + "***" + foneBody.slice(-2) : "(vazio)",
+      digitos: foneBody.length,
+      parece_telefone: foneBody.length >= 12 && foneBody.length <= 13,
+      casou_contato_conhecido: !!conhecido.rows[0],
+    };
+    observados.unshift(reg);
+    observados.length = Math.min(observados.length, 40);
+    console.log("[OBSERVACAO]", reg.sentido, "| sufixo:", reg.remoteJid_sufixo,
+                "| modo:", reg.addressingMode, "| alt:", reg.tem_remoteJidAlt,
+                "| digitos:", reg.digitos, "| parece telefone:", reg.parece_telefone,
+                "| casou conhecido:", reg.casou_contato_conhecido);
+  } catch (err) {
+    console.error("[OBSERVACAO] falha ao registrar:", err.message);
+  }
+}
+
 const CLIENT_SLUG  = process.env.CLIENT_SLUG || "viltrum";
 const AGENT_CONFIG = require(`./clients/${CLIENT_SLUG}`);
 
@@ -1266,6 +1295,14 @@ app.post("/webhook", async (req, res) => {
     const semDDI          = n => n.startsWith("55") && n.length >= 12 ? n.slice(2) : n;
     const sem9            = n => n.startsWith("55") && n.length === 13 && n[4] === "9" ? n.slice(0, 4) + n.slice(5) : n;
 
+    // Registra o formato do identificador ANTES de qualquer ramo, inclusive o
+    // de fromMe. Tem que ser aqui porque a pausa automática quando a atendente
+    // responde depende da MESMA resolução de telefone: se a mensagem dela
+    // chegar com @lid sem alternativa, a pausa é gravada num lead com chave de
+    // LID e a IA continua respondendo por cima dela. Sem observar os dois
+    // sentidos, o teste não responderia justamente a pergunta que importa.
+    if (MODO_OBSERVACAO) await registrarObservacao(req.body, body, foneBody);
+
     // Mensagem enviada da própria instância (operador via WhatsApp Web/App)
     if (body.fromMe) {
       const isToResponsavel = foneResponsavel.length > 5 && (
@@ -1336,30 +1373,7 @@ app.post("/webhook", async (req, res) => {
     // persiste a chave completa (addressingMode em 6 de 255 na Sorrix).
     // Liga com MODO_OBSERVACAO=true, confere em GET /admin/webhook-ultimos,
     // e só então desliga.
-    if (MODO_OBSERVACAO) {
-      const k = req.body?.data?.key || {};
-      const conhecido = await db.query(`SELECT nome FROM contatos_conhecidos WHERE phone = $1`, [foneBody]);
-      observados.unshift({
-        em: new Date().toISOString(),
-        remoteJid_sufixo: (String(k.remoteJid || "").match(/@.+$/) || ["(sem @)"])[0],
-        addressingMode: k.addressingMode || "(ausente)",
-        tem_remoteJidAlt: !!k.remoteJidAlt,
-        tem_senderPn: !!k.senderPn,
-        telefone_resolvido: foneBody ? foneBody.slice(0, 4) + "***" + foneBody.slice(-2) : "(vazio)",
-        digitos: foneBody.length,
-        parece_telefone: foneBody.length >= 12 && foneBody.length <= 13,
-        casou_contato_conhecido: !!conhecido.rows[0],
-        fromMe: !!body.fromMe,
-      });
-      observados.length = Math.min(observados.length, 40);
-      console.log("[OBSERVACAO] sufixo:", observados[0].remoteJid_sufixo,
-                  "| modo:", observados[0].addressingMode,
-                  "| alt:", observados[0].tem_remoteJidAlt,
-                  "| digitos:", observados[0].digitos,
-                  "| parece telefone:", observados[0].parece_telefone,
-                  "| casou conhecido:", observados[0].casou_contato_conhecido);
-      return;
-    }
+    if (MODO_OBSERVACAO) return;
 
     // Contato que já falava com este número antes da IA entrar: não atende.
     // É gente com relação prévia com o dono, e quem responde é ele. Registra a
