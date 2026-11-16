@@ -1973,7 +1973,21 @@ async function verificarGatilhos(reply, userId) {
       `${AGENTE} já disse ao paciente que alguém vai confirmar o horário, e foi desativada nesse chat. ` +
       `Responda direto pelo WhatsApp ou pelo painel.`;
 
-    await notificarResponsavel(`Pedido de agendamento — ${nome} (${preferencia})`, corpo);
+    // Quando o cliente tem modelo de confirmação, ele vai pronto e preenchido
+    // logo abaixo do aviso: quem confirma a agenda copia e manda, sem redigitar
+    // nada. O campo Data vem com o que o PACIENTE pediu, não com horário
+    // confirmado — por isso o alerta antes do bloco. Horário errado enviado ao
+    // paciente é pior que um campo a mais pra digitar.
+    const corpoFinal = AGENT_CONFIG.confirmacaoAgendamento
+      ? corpo +
+        `\n\n────────────────────\n` +
+        `MENSAGEM PRONTA PRA ENVIAR AO PACIENTE\n` +
+        `Confira a data antes: ela está preenchida com o que o paciente pediu, não com o horário que você confirmou.\n` +
+        `────────────────────\n\n` +
+        AGENT_CONFIG.confirmacaoAgendamento({ nome, telefone, preferencia, procura, observacao })
+      : corpo;
+
+    await notificarResponsavel(`Pedido de agendamento — ${nome} (${preferencia})`, corpoFinal);
     broadcastSSE("leads_update", { phone: userId });
     console.log("[AGENDAMENTO_SOLICITADO]", nome, "|", procura, "|", preferencia, "| IA desativada para:", userId);
   }

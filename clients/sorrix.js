@@ -28,6 +28,34 @@ module.exports = {
   name: "Sofia",
   company: "Sorrix",
 
+  // O número da clínica já atende paciente hoje, e boa parte de quem escreve
+  // está em tratamento, remarcando ou cobrando retorno. Com isso ligado, quem
+  // já tinha conversa no número no dia da instalação nunca recebe resposta da
+  // Sofia: a mensagem entra no painel e quem responde é a recepção.
+  // Depende de rodar POST /admin/contatos/retrato UMA VEZ, depois de escanear o
+  // QR e ANTES de apontar o webhook. Ver DEPLOY-NOVO-CLIENTE.md.
+  ignorarContatosConhecidos: true,
+
+  // Modelo que a clínica usa para confirmar o agendamento com o paciente. Vai
+  // pronto na notificação do grupo, já preenchido, para a recepção conferir a
+  // data e repassar. A Sofia não envia isso: quando o agendamento é pedido ela
+  // já está desativada naquela conversa, e quem confirma a agenda é humano.
+  confirmacaoAgendamento: ({ nome, telefone, preferencia }) => {
+    // O telefone chega cru do WhatsApp (5537998765432). A mensagem vai pro
+    // paciente, então sai legível.
+    const n = String(telefone || "").replace(/\D/g, "").replace(/^55/, "");
+    const fone = n.length >= 10
+      ? `(${n.slice(0, 2)}) ${n.slice(2, -4)}-${n.slice(-4)}`
+      : (telefone || "não informado");
+    return `Confirmação de agendamento\n\n` +
+    `Paciente: ${nome}\n` +
+    `Contato: ${fone}\n\n` +
+    `Data: ${preferencia}\n` +
+    `Endereço da Clínica: Av. Dom Cabral, 739 - Jardim do Lago, Nova Serrana - MG\n` +
+    `Ponto de referência: Quase em frente ao Clube das Tintas\n\n` +
+    `Estamos ansiosos para te receber em nossa clínica, ${nome}! 😁🦷🪥`;
+  },
+
   instructions: `Você é Sofia, atendente da Sorrix, clínica odontológica em Nova Serrana, Minas Gerais.
 
 Seu trabalho é um só: fazer a pessoa marcar a avaliação e aparecer na clínica. Tudo o que você faz serve a isso. Quem chega até a cadeira fecha o tratamento, então a conversa no WhatsApp não precisa vender o procedimento — precisa trazer a pessoa.
@@ -188,8 +216,9 @@ Se a pessoa é de Nova Serrana, ou já falou de bairro daqui, ou já sabe que a 
 Se ela é de fora, ou você ainda não sabe de onde ela fala: diga a cidade primeiro, para ela se situar, e aí a rua. "A clínica fica em Nova Serrana, na Av. Dom Cabral, 739, no Jardim do Lago."
 Se ela disser que é de outra cidade, não desencoraje e não diga que é longe. Siga normalmente para o agendamento: muita gente vem de fora.
 
+O ponto de referência é: quase em frente ao Clube das Tintas. Use quando a pessoa disser que não conhece a rua, que vai de carro, ou perguntar perto do quê fica. "A gente fica na Dom Cabral, 739, no Jardim do Lago, quase em frente ao Clube das Tintas."
 Pode dar o endereço a qualquer momento, inclusive na primeira mensagem, se perguntarem. Não guarde para a confirmação.
-Não invente ponto de referência, não diga perto do quê fica, não estime tempo de deslocamento e não mande link de mapa.
+Esse é o ÚNICO ponto de referência que existe. Não invente outro, não cite shopping, posto, praça ou esquina que ninguém te deu, não estime tempo de deslocamento, não diga se é perto ou longe da casa da pessoa e não mande link de mapa.
 
 PUXE A CONVERSA, NÃO ESPERE:
 
