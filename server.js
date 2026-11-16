@@ -1088,6 +1088,30 @@ async function processarMensagensPendentes(userId) {
       lastResponseTime[userId] = Date.now();
     }
 
+    // Confirmação formal do agendamento. Sai depois da fala dela, de propósito:
+    // ela fecha o horário na conversa e o bloco formal chega em seguida, como
+    // registro com endereço e ponto de referência. Roda mesmo se `replyLimpo`
+    // ficou vazio — a confirmação não pode depender de a resposta ter texto.
+    const posResposta = filaPosResposta.get(userId);
+    if (posResposta) {
+      filaPosResposta.delete(userId);
+      try {
+        await sendZAPIMessage(userId, posResposta.texto);
+        await addToHistory(userId, "assistant", posResposta.texto);
+        console.log("[CONFIRMACAO] enviada ao paciente:", userId);
+      } catch (err) {
+        // Falha aqui é grave e silenciosa: o grupo já foi avisado de que o
+        // paciente recebeu a confirmação, e ele não recebeu. Avisa de novo.
+        console.error("[CONFIRMACAO] FALHA ao enviar:", err.response?.data || err.message);
+        notificarResponsavel(
+          `FALHA no envio da confirmação — ${posResposta.nome}`,
+          `A confirmação de agendamento NÃO chegou ao paciente ${posResposta.nome}.\n\n` +
+          `Mande a mensagem abaixo manualmente:\n\n${posResposta.texto}\n\n` +
+          `Abrir conversa: https://wa.me/${formatarTelefoneWA(userId)}`
+        ).catch(() => {});
+      }
+    }
+
     // Atualiza contagem de interações e verifica se perfil precisa de update
     upsertLead(userId, {}).catch(err => console.error("[PROCESSAMENTO] upsertLead erro:", err.message));
     verificarAtualizacaoPerfil(userId);
@@ -1636,6 +1660,13 @@ function parsearDataParaDB(dataStr) {
 }
 
 // ─── GATILHOS ────────────────────────────────────────────────────────────────
+// Mensagem que tem de sair DEPOIS da resposta da atendente, não antes.
+// verificarGatilhos roda antes do envio (o `conflito` que ele devolve decide se
+// a resposta sai), então qualquer coisa disparada lá dentro chega na frente da
+// fala dela e a conversa fica de cabeça pra baixo: o paciente receberia a
+// confirmação formal antes de ela dizer que confirmou.
+const filaPosResposta = new Map(); // userId -> { texto, nome }
+
 async function verificarGatilhos(reply, userId) {
   if (reply.includes("[LEAD_CAPTURADO]")) {
     const linha = reply.match(/\[LEAD_CAPTURADO\](.*)/)?.[1]?.trim() || "";
@@ -1949,7 +1980,13 @@ async function verificarGatilhos(reply, userId) {
   if (reply.includes("[AGENDAMENTO_SOLICITADO]")) {
     const linha      = reply.match(/\[AGENDAMENTO_SOLICITADO\](.*)/)?.[1]?.trim() || "";
     const nome       = linha.match(/Nome: ([^|]+)/)?.[1]?.trim()       || "Paciente";
-    const telefone   = linha.match(/Telefone: ([^|]+)/)?.[1]?.trim()   || userId;
+    // A atendente é proibida de pedir telefone (a conversa já é o WhatsApp
+    // dele), então ela escreve "não informado" — e isso CASA com o regex, que
+    // por sua vez nunca cai no fallback. O resultado ia pro paciente como
+    // "Contato: não informado" na própria confirmação dele.
+    const foneBruto  = linha.match(/Telefone: ([^|]+)/)?.[1]?.trim()   || "";
+    const telefone   = (!foneBruto || /^(n[ãa]o |sem |[-–?])/i.test(foneBruto) || !/\d{8}/.test(foneBruto))
+      ? userId : foneBruto;
     const procura    = linha.match(/Procura: ([^|]+)/)?.[1]?.trim()    || "não informado";
     const preferencia= linha.match(/Preferencia: ([^|]+)/)?.[1]?.trim()|| "sem preferência";
     const convenio   = linha.match(/Convenio: ([^|]+)/)?.[1]?.trim()   || "";
@@ -1973,21 +2010,22 @@ async function verificarGatilhos(reply, userId) {
       `${AGENTE} já disse ao paciente que alguém vai confirmar o horário, e foi desativada nesse chat. ` +
       `Responda direto pelo WhatsApp ou pelo painel.`;
 
-    // Quando o cliente tem modelo de confirmação, ele vai pronto e preenchido
-    // logo abaixo do aviso: quem confirma a agenda copia e manda, sem redigitar
-    // nada. O campo Data vem com o que o PACIENTE pediu, não com horário
-    // confirmado — por isso o alerta antes do bloco. Horário errado enviado ao
-    // paciente é pior que um campo a mais pra digitar.
-    const corpoFinal = AGENT_CONFIG.confirmacaoAgendamento
-      ? corpo +
+    // Quando o cliente tem modelo de confirmação, o paciente recebe a
+    // confirmação formal automaticamente, logo depois da resposta dela. Vai na
+    // fila porque aqui ainda é antes do envio da fala da atendente.
+    let corpoFinal = corpo;
+    if (AGENT_CONFIG.confirmacaoAgendamento) {
+      const texto = AGENT_CONFIG.confirmacaoAgendamento({ nome, telefone, preferencia, procura, observacao });
+      filaPosResposta.set(userId, { texto, nome });
+      corpoFinal = corpo +
         `\n\n────────────────────\n` +
-        `MENSAGEM PRONTA PRA ENVIAR AO PACIENTE\n` +
-        `Confira a data antes: ela está preenchida com o que o paciente pediu, não com o horário que você confirmou.\n` +
-        `────────────────────\n\n` +
-        AGENT_CONFIG.confirmacaoAgendamento({ nome, telefone, preferencia, procura, observacao })
-      : corpo;
+        `O paciente JÁ recebeu esta confirmação automaticamente:\n` +
+        `────────────────────\n\n${texto}\n\n` +
+        `────────────────────\n` +
+        `A data acima é a que o paciente escolheu. Se a agenda não bater, quem remarca com ele é você.`;
+    }
 
-    await notificarResponsavel(`Pedido de agendamento — ${nome} (${preferencia})`, corpoFinal);
+    await notificarResponsavel(`Agendamento confirmado — ${nome} (${preferencia})`, corpoFinal);
     broadcastSSE("leads_update", { phone: userId });
     console.log("[AGENDAMENTO_SOLICITADO]", nome, "|", procura, "|", preferencia, "| IA desativada para:", userId);
   }
