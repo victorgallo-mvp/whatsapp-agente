@@ -46,6 +46,10 @@ const NOTIFICACOES = {
 // Cada cliente é um arquivo em clients/<slug>.js (mesmo motor, prompt e config
 // isolados por deploy). CLIENT_SLUG decide qual carregar — default "viltrum"
 // pra não quebrar o deploy atual se a env var não for setada.
+// Recebe e registra, sem responder. Ver o bloco MODO OBSERVAÇÃO no /webhook.
+const MODO_OBSERVACAO = process.env.MODO_OBSERVACAO === "true";
+const observados = [];
+
 const CLIENT_SLUG  = process.env.CLIENT_SLUG || "viltrum";
 const AGENT_CONFIG = require(`./clients/${CLIENT_SLUG}`);
 
@@ -1321,6 +1325,39 @@ app.post("/webhook", async (req, res) => {
     console.log("[WEBHOOK] fone:", foneBody, "| responsavel:", foneResponsavel, "| match:", ehResponsavel);
     if (ehResponsavel) {
       await processarMensagemResponsavel(body);
+      return;
+    }
+
+    // MODO OBSERVAÇÃO: recebe, registra o formato do identificador e NÃO
+    // responde ninguém. Existe porque a migração pra @lid do WhatsApp tornou
+    // impossível saber, antes de ligar o webhook, qual identidade vai chegar de
+    // verdade — e errar isso significa a IA responder paciente em tratamento.
+    // O histórico sincronizado não serve de amostra: nele o Evolution não
+    // persiste a chave completa (addressingMode em 6 de 255 na Sorrix).
+    // Liga com MODO_OBSERVACAO=true, confere em GET /admin/webhook-ultimos,
+    // e só então desliga.
+    if (MODO_OBSERVACAO) {
+      const k = req.body?.data?.key || {};
+      const conhecido = await db.query(`SELECT nome FROM contatos_conhecidos WHERE phone = $1`, [foneBody]);
+      observados.unshift({
+        em: new Date().toISOString(),
+        remoteJid_sufixo: (String(k.remoteJid || "").match(/@.+$/) || ["(sem @)"])[0],
+        addressingMode: k.addressingMode || "(ausente)",
+        tem_remoteJidAlt: !!k.remoteJidAlt,
+        tem_senderPn: !!k.senderPn,
+        telefone_resolvido: foneBody ? foneBody.slice(0, 4) + "***" + foneBody.slice(-2) : "(vazio)",
+        digitos: foneBody.length,
+        parece_telefone: foneBody.length >= 12 && foneBody.length <= 13,
+        casou_contato_conhecido: !!conhecido.rows[0],
+        fromMe: !!body.fromMe,
+      });
+      observados.length = Math.min(observados.length, 40);
+      console.log("[OBSERVACAO] sufixo:", observados[0].remoteJid_sufixo,
+                  "| modo:", observados[0].addressingMode,
+                  "| alt:", observados[0].tem_remoteJidAlt,
+                  "| digitos:", observados[0].digitos,
+                  "| parece telefone:", observados[0].parece_telefone,
+                  "| casou conhecido:", observados[0].casou_contato_conhecido);
       return;
     }
 
@@ -2903,6 +2940,25 @@ app.get("/admin/grupos", async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.response?.data || err.message });
   }
+});
+
+// O que o webhook REALMENTE entregou, com o telefone mascarado. É o único
+// jeito honesto de saber se a resolução de identidade funciona neste número
+// antes de deixar a IA responder alguém. Ver MODO_OBSERVACAO.
+app.get("/admin/webhook-ultimos", (req, res) => {
+  const comTelefone = observados.filter(o => o.parece_telefone).length;
+  res.json({
+    modo_observacao: MODO_OBSERVACAO,
+    recebidas: observados.length,
+    com_telefone_valido: comTelefone,
+    cobertura: observados.length ? Math.round(comTelefone / observados.length * 100) + "%" : "-",
+    veredito: !observados.length
+      ? "nenhuma mensagem ainda — peça pra alguém escrever no número"
+      : comTelefone === observados.length
+        ? "identidade OK: pode desligar MODO_OBSERVACAO"
+        : "ATENÇÃO: parte das mensagens chega sem telefone resolvível. Não desligue o modo observação.",
+    ultimas: observados,
+  });
 });
 
 app.get("/admin/contatos", async (req, res) => {
