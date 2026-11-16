@@ -63,6 +63,27 @@ module.exports = {
   // QR e ANTES de apontar o webhook. Ver DEPLOY-NOVO-CLIENTE.md.
   ignorarContatosConhecidos: true,
 
+  // Colunas do painel e qual tag move o lead. As chaves internas (novo,
+  // em_atendimento, orcamento, visita) são as do dashboard e não mudam; o que
+  // muda é o rótulo e o mapeamento. Sem isto, o painel da clínica mostrava
+  // "Orçamento" e "Visita Agendada" (mundo da Viltrum) e procurava
+  // [VISITA_SOLICITADA] e [LEAD_CAPTURADO] — tags que a Sofia não emite. Por
+  // isso o lead que agendou nunca saía de "Em Atendimento".
+  // A prioridade é a ordem das colunas: a mais à direita vence.
+  kanban: {
+    colunas: [
+      { key: "novo",           titulo: "Novo Contato" },
+      { key: "em_atendimento", titulo: "Conversando" },
+      { key: "orcamento",      titulo: "Precisa da Clínica" },
+      { key: "visita",         titulo: "Agendado" },
+    ],
+    tags: {
+      PRECISA_SUPORTE:         "orcamento",
+      TRANSFERIR_ATENDENTE:    "orcamento",
+      AGENDAMENTO_SOLICITADO:  "visita",
+    },
+  },
+
   // O servidor usa isto para montar o bloco <dias_de_atendimento> do contexto,
   // com os próximos dias já sem fim de semana e sem feriado. Ver
   // clients/_feriados.js — os móveis saem da Páscoa, calculados, não digitados.

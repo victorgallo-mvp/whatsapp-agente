@@ -3370,6 +3370,22 @@ app.get("/", (req, res) => res.json({
   agent: AGENT_CONFIG.name,
   company: AGENT_CONFIG.company,
   qualificacao: !!AGENT_CONFIG.qualificacao,
+  // O painel é o mesmo HTML para todos os deploys, então os rótulos das colunas
+  // e as tags que movem o lead vêm daqui. O default é o funil da Viltrum, que
+  // era o que estava cravado no HTML.
+  kanban: AGENT_CONFIG.kanban || {
+    colunas: [
+      { key: "novo",           titulo: "Novo Lead" },
+      { key: "em_atendimento", titulo: "Em Atendimento" },
+      { key: "orcamento",      titulo: "Orçamento" },
+      { key: "visita",         titulo: "Visita Agendada" },
+    ],
+    tags: {
+      LEAD_CAPTURADO:    "orcamento",
+      LEAD_QUALIFICADO:  "orcamento",
+      VISITA_SOLICITADA: "visita",
+    },
+  },
   calendar: GOOGLE_CALENDAR_ENABLED ? "ativo" : "pendente configuracao",
 }));
 

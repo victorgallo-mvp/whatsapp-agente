@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Painel Olivia</title>
+<title>Painel de atendimento</title>
 <style>
   /* Cores da marca Feeling: verde #04D81A como destaque, preto e branco como
      base. O manual pede "verde concentrado nos pontos de atenção", então ele
@@ -611,12 +611,8 @@
       const msgs = await r.json();
       if (!Array.isArray(msgs) || msgs.length === 0) { leadColumns[phone] = "novo"; return; }
 
-      if (msgs.some(m => (m.content || "").includes("[VISITA_SOLICITADA]"))) {
-        leadColumns[phone] = "visita"; return;
-      }
-      if (msgs.some(m => (m.content || "").includes("[LEAD_CAPTURADO]") || (m.content || "").includes("[LEAD_QUALIFICADO]"))) {
-        leadColumns[phone] = "orcamento"; return;
-      }
+      const porTag = colunaPorTags(msgs.map(m => m.content || "").join("\n"));
+      if (porTag) { leadColumns[phone] = porTag; return; }
       const firstAssIdx = msgs.findIndex(m => m.role === "assistant");
       if (firstAssIdx === -1) { leadColumns[phone] = "novo"; return; }
       const clientReplied = msgs.slice(firstAssIdx + 1).some(m => m.role === "user");
@@ -847,9 +843,9 @@
   function updateToggleBtn() {
     const btn = document.getElementById("toggle-btn");
     if (oliviaAtiva) {
-      btn.textContent = "Desativar Olivia"; btn.className = "toggle-btn toggle-on";
+      btn.textContent = "Desativar " + AGENTE; btn.className = "toggle-btn toggle-on";
     } else {
-      btn.textContent = "Ativar Olivia"; btn.className = "toggle-btn toggle-off";
+      btn.textContent = "Ativar " + AGENTE; btn.className = "toggle-btn toggle-off";
     }
   }
 
@@ -901,12 +897,11 @@
           lead.last_interaction_at = data.created_at;
           leads.sort((a,b) => new Date(b.last_interaction_at||0) - new Date(a.last_interaction_at||0));
 
-          // Smart column bump based on content
+          // Move a coluna pela tag que veio na mensagem, sem recarregar a página.
           const content = data.content || "";
-          if (content.includes("[VISITA_SOLICITADA]")) {
-            leadColumns[data.phone] = "visita";
-          } else if (content.includes("[LEAD_CAPTURADO]") || content.includes("[LEAD_QUALIFICADO]")) {
-            leadColumns[data.phone] = "orcamento";
+          const porTag  = colunaPorTags(content);
+          if (porTag) {
+            leadColumns[data.phone] = porTag;
           } else if (data.role === "user" && leadColumns[data.phone] === "novo") {
             leadColumns[data.phone] = "em_atendimento";
           }
@@ -964,9 +959,9 @@
       const lead = leads.find(l => l.phone === activePhone);
       if (lead) lead.olivia_ativa = ativa;
       renderKanban();
-      toast(ativa ? "Olivia ativada" : "Olivia desativada");
+      toast(AGENTE + (ativa ? " ativada" : " desativada"));
       if (mensagem) await loadMsgs(true);
-    } catch (e) { toast("Erro ao alterar Olivia"); console.error(e); }
+    } catch (e) { toast("Erro ao alterar " + AGENTE); console.error(e); }
   }
 
   // ─── SEND TEXT ───────────────────────────────────────────────
@@ -1027,6 +1022,30 @@
   // só o que aparece no piscar antes da rota "/" responder.
   let AGENTE = "Olivia";
   let QUALIF = { ativa: false, campos: [], valores: {} };
+  // Colunas e tags vêm da rota "/" (AGENT_CONFIG.kanban). Antes os rótulos
+  // estavam no HTML e as tags cravadas no JS, as duas coisas no mundo da
+  // Viltrum: o painel da clínica procurava [VISITA_SOLICITADA] e o lead que
+  // agendou com [AGENDAMENTO_SOLICITADO] nunca saía de "Em Atendimento".
+  let KANBAN = {
+    colunas: [
+      { key: "novo",           titulo: "Novo Lead" },
+      { key: "em_atendimento", titulo: "Em Atendimento" },
+      { key: "orcamento",      titulo: "Orçamento" },
+      { key: "visita",         titulo: "Visita Agendada" },
+    ],
+    tags: { LEAD_CAPTURADO: "orcamento", LEAD_QUALIFICADO: "orcamento", VISITA_SOLICITADA: "visita" },
+  };
+  // Ordem das colunas = prioridade: a mais à direita vence quando a conversa
+  // tem mais de uma tag (quem agendou passou por "precisa da clínica" antes).
+  const pesoColuna = k => KANBAN.colunas.findIndex(c => c.key === k);
+  function colunaPorTags(texto) {
+    let melhor = null;
+    for (const [tag, col] of Object.entries(KANBAN.tags)) {
+      if (!texto.includes("[" + tag + "]")) continue;
+      if (melhor === null || pesoColuna(col) > pesoColuna(melhor)) melhor = col;
+    }
+    return melhor;
+  }
 
   // ─── MARCA DINÂMICA ──────────────────────────────────────────
   // Puxa o nome da empresa do próprio backend (rota "/") em vez de fixar no HTML —
@@ -1034,7 +1053,7 @@
   (async () => {
     try {
       const r = await fetch("/");
-      const { company, agent, qualificacao } = await r.json();
+      const { company, agent, qualificacao, kanban } = await r.json();
       if (agent) AGENTE = agent;
       if (qualificacao) {
         document.getElementById("fila-link").style.display = "";
@@ -1051,6 +1070,15 @@
       document.querySelectorAll("[data-agente]").forEach(el => {
         el.textContent = el.dataset.agente.replace("{AGENTE}", AGENTE);
       });
+      // Rótulos das colunas do kanban, por cliente.
+      if (kanban && Array.isArray(kanban.colunas) && kanban.colunas.length) {
+        KANBAN = kanban;
+        for (const c of kanban.colunas) {
+          const h = document.querySelector("#count-" + c.key)?.previousElementSibling;
+          if (h && h.classList.contains("col-title")) h.textContent = c.titulo;
+        }
+        renderKanban();
+      }
     } catch (e) { console.error("marca dinamica:", e); }
   })();
 
