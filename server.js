@@ -1183,8 +1183,24 @@ function parseWebhookBody(raw) {
   const data = raw.data;
   const key  = data.key;
   const msg  = data.message || {};
-  const jid  = key.remoteJid || "";
-  const phone = jid.replace(/@s\.whatsapp\.net$/, "").replace(/@g\.us$/, "");
+  // O WhatsApp está migrando identificador para @lid (key.addressingMode
+  // "lid"). Nesse modo o remoteJid NÃO é telefone: é um id interno de 14 a 15
+  // dígitos, tipo 149491051135088@lid. O número real vem em remoteJidAlt.
+  //
+  // Sem tratar isso, tudo que é indexado por telefone quebra de uma vez: o
+  // lead é gravado com o LID, o link wa.me não abre, o envio vai pro lugar
+  // errado, e o contato nunca casa com contatos_conhecidos — ou seja, a IA
+  // responderia justamente o paciente em atendimento que a gente quis proteger.
+  // Visto na instalação da Sorrix: 27 de 29 chats vinham como @lid.
+  const jidBruto = key.remoteJid || "";
+  const ehLid    = jidBruto.endsWith("@lid");
+  const jid      = ehLid
+    ? (key.remoteJidAlt || key.senderPn || key.participantPn || jidBruto)
+    : jidBruto;
+  if (ehLid && jid === jidBruto) {
+    console.warn("[LID] remoteJid veio como @lid e não há remoteJidAlt. Indexando pelo LID:", jidBruto);
+  }
+  const phone = jid.replace(/@s\.whatsapp\.net$/, "").replace(/@g\.us$/, "").replace(/@lid$/, "");
 
   const imageMsg = msg.imageMessage;
   const docMsg   = msg.documentMessage
@@ -2801,23 +2817,71 @@ app.post("/admin/contatos/retrato", async (req, res) => {
       { headers: EVOLUTION_HEADERS(), timeout: 60000 }
     );
     const chats = Array.isArray(r.data) ? r.data : (r.data?.chats || []);
-    let salvos = 0, grupos = 0;
 
+    // findChats devolve @lid na maioria dos casos desde a migração de
+    // identificador do WhatsApp (27 de 29 na Sorrix), e LID não é telefone. O
+    // telefone real vem de três lugares, em ordem de confiança:
+    //   1. findContacts, que ainda devolve @s.whatsapp.net com pushName
+    //   2. remoteJidAlt da última mensagem do chat, quando existe
+    //   3. o próprio remoteJid, quando já é @s.whatsapp.net
+    // Gravar LID aqui é pior que não gravar nada: a lista fica cheia e não
+    // casa com ninguém, e a IA atende todo mundo achando que está protegida.
+    const rc = await axios.post(
+      `${EVOLUTION_URL}/chat/findContacts/${EVOLUTION_INSTANCE}`,
+      {},
+      { headers: EVOLUTION_HEADERS(), timeout: 60000 }
+    ).catch(err => {
+      console.error("[CONTATOS] findContacts falhou:", err.response?.data || err.message);
+      return { data: [] };
+    });
+    const contatos = Array.isArray(rc.data) ? rc.data : (rc.data?.contacts || []);
+
+    const soTelefone = j => {
+      const s = String(j || "");
+      if (!s || s.endsWith("@g.us") || s.endsWith("@lid")) return null;
+      const n = s.replace(/@s\.whatsapp\.net$/, "").replace(/\D/g, "");
+      // telefone brasileiro tem 12 ou 13 dígitos com DDI; LID tem 14+
+      return n.length >= 10 && n.length <= 13 ? n : null;
+    };
+
+    const achados = new Map(); // phone -> nome
+    let grupos = 0, lidSemTelefone = 0;
+
+    for (const c of contatos) {
+      if (String(c.remoteJid || c.id || "").endsWith("@g.us")) { grupos++; continue; }
+      const p = soTelefone(c.remoteJid || c.id);
+      if (p) achados.set(p, c.pushName || c.name || achados.get(p) || null);
+    }
     for (const c of chats) {
       const jid = c.remoteJid || c.id || c.jid || "";
-      if (!jid) continue;
-      if (jid.endsWith("@g.us")) { grupos++; continue; }   // grupo já é ignorado no webhook
-      const phone = jid.replace(/@s\.whatsapp\.net$/, "").replace(/\D/g, "");
-      if (!phone) continue;
+      if (jid.endsWith("@g.us")) { grupos++; continue; }
+      const p = soTelefone(jid) || soTelefone(c.lastMessage?.key?.remoteJidAlt);
+      if (p) achados.set(p, c.pushName || achados.get(p) || null);
+      else if (jid.endsWith("@lid")) lidSemTelefone++;
+    }
+
+    if (req.query.reset === "1") await db.query(`DELETE FROM contatos_conhecidos`);
+    for (const [phone, nome] of achados) {
       await db.query(
-        `INSERT INTO contatos_conhecidos (phone, nome) VALUES ($1, $2) ON CONFLICT (phone) DO NOTHING`,
-        [phone, c.pushName || c.name || null]
+        `INSERT INTO contatos_conhecidos (phone, nome) VALUES ($1, $2)
+         ON CONFLICT (phone) DO UPDATE SET nome = COALESCE(contatos_conhecidos.nome, EXCLUDED.nome)`,
+        [phone, nome]
       );
-      salvos++;
     }
     const total = await db.query(`SELECT COUNT(*)::int n FROM contatos_conhecidos`);
-    console.log(`[CONTATOS] Retrato: ${salvos} conversas individuais, ${grupos} grupos ignorados`);
-    res.json({ ok: true, conversas_lidas: chats.length, individuais: salvos, grupos_ignorados: grupos, total_na_base: total.rows[0].n });
+    console.log(`[CONTATOS] Retrato: ${achados.size} telefones, ${grupos} grupos ignorados, ${lidSemTelefone} chats @lid sem telefone`);
+    res.json({
+      ok: true,
+      chats_lidos: chats.length,
+      contatos_lidos: contatos.length,
+      telefones_gravados: achados.size,
+      grupos_ignorados: grupos,
+      chats_lid_sem_telefone: lidSemTelefone,
+      total_na_base: total.rows[0].n,
+      aviso: lidSemTelefone
+        ? `${lidSemTelefone} conversas vieram só como @lid e não deu pra descobrir o telefone. Essas pessoas NÃO estão protegidas: se escreverem, a IA responde.`
+        : undefined,
+    });
   } catch (err) {
     res.status(500).json({ error: err.response?.data || err.message });
   }
