@@ -1644,6 +1644,42 @@ function blocosDeContexto({ lead = null, knowledge = [], slots = null } = {}) {
            `</origem_anuncio>`;
   }
 
+  // Dias de atendimento já calculados, com feriado nacional e feriado próprio
+  // do cliente descontados. É o item 1 do LICOES-DE-PROMPT.md aplicado a data:
+  // a regra em texto ("se hoje for sexta, ofereça segunda") falhou em 4 de 10
+  // simulações porque, para obedecer, o modelo tinha que descobrir que dia da
+  // semana é amanhã. E feriado ele não tem como saber. Aqui ele lê a lista.
+  if (AGENT_CONFIG.agenda) {
+    const { proximosDiasDeAtendimento, feriadosProximos } = require("./clients/_feriados");
+    const ag    = AGENT_CONFIG.agenda;
+    const agora = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+    // Passou do último horário do dia: hoje não é mais oferecível.
+    const [hLim, mLim] = String(ag.ultimoHorario || "18:30").split(":").map(Number);
+    const pularHoje = agora.getHours() * 60 + agora.getMinutes() >= hLim * 60 + mLim;
+
+    const dias = proximosDiasDeAtendimento({
+      quantos: ag.diasAFrente || 6,
+      diasQueAtende: ag.diasQueAtende || [1, 2, 3, 4, 5],
+      extras: ag.feriadosExtras || [],
+      hoje: agora,
+      pularHoje,
+    });
+    const fer = feriadosProximos({ dias: 21, extras: ag.feriadosExtras || [], hoje: agora });
+
+    ctx += `\n\n<dias_de_atendimento>\n` +
+           `Estes são os próximos dias em que a clínica atende, na ordem, já sem fim de semana e sem feriado:\n` +
+           dias.map((d, i) => `${i + 1}. ${d.rotulo}${i === 0 && !pularHoje ? " (hoje)" : ""}`).join("\n") + `\n\n` +
+           `OFEREÇA SEMPRE DESTA LISTA, de cima para baixo. Está proibido oferecer data que não está aqui, ` +
+           `e proibido calcular dia da semana ou feriado por conta própria: se não está na lista, a clínica não atende.\n` +
+           (fer.length
+             ? `Feriados nas próximas três semanas, caso a pessoa peça um deles: ` +
+               fer.map(f => `${f.rotulo} (${f.nome}, ${f.diaSemana})`).join("; ") +
+               `. Nesses dias a clínica não atende | diga qual é o feriado e ofereça o próximo dia da lista.\n`
+             : `Não há feriado nas próximas três semanas.\n`) +
+           (pularHoje ? `Já passou do último horário de hoje, então hoje não entra.\n` : "") +
+           `</dias_de_atendimento>`;
+  }
+
   if (slots && slots.length > 0) {
     ctx += `\n\n<agenda_disponivel>\n`;
     slots.forEach(s => { ctx += `- ${s.data}: ${s.horarios.join(", ")}\n`; });
