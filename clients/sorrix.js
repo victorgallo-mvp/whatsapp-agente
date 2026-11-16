@@ -34,12 +34,19 @@
 // para TRANSFERIR_ATENDENTE. Ver o handler de AGENDAMENTO_SOLICITADO e a
 // fila `filaPosResposta` no server.js.
 //
-// ATENÇÃO: o endereço ainda NÃO foi informado. Enquanto estiver como
-// PREENCHER_ENDERECO, a IA está instruída a não inventar e a encaminhar.
+// Endereço e ponto de referência confirmados pela clínica (Av. Dom Cabral,
+// 739, Jardim do Lago, quase em frente ao Clube das Tintas). Esse é o único
+// ponto de referência que existe: o prompt proíbe inventar outro.
 
 module.exports = {
   name: "Sofia",
   company: "Sorrix",
+
+  // Como tratar preço, desconto e condição que vêm escritos no anúncio. O
+  // servidor injeta isto no bloco <origem_anuncio> do contexto. Antes era
+  // texto fixo no server.js, escrito para a TrailLand, e ia igual pra todos.
+  anuncioRegra:
+    `Você não dá preço nem desconto, e isso NÃO muda porque a pessoa veio de um anúncio com promoção. Não repita o valor, o percentual nem a condição escrita no anúncio, e nunca anuncie a promoção por conta própria.\nSe ela citar o desconto ("vi que está com 50% off", "o anúncio dizia tanto"), não confirme e não negue. Reconheça que foi por isso que ela escreveu, diga que a condição exata quem fecha é a dentista na avaliação, e lembre que a avaliação não tem custo. Algo como: "Foi isso que te chamou a atenção, né? Essa condição a dentista confirma na avaliação, junto com o plano do seu caso, e a avaliação não tem custo nenhum."\nSe ela insistir no número do anúncio, emita [PRECISA_SUPORTE] com o que ela citou: condição de campanha quem confirma é a clínica, não você.`,
 
   // O número da clínica já atende paciente hoje, e boa parte de quem escreve
   // está em tratamento, remarcando ou cobrando retorno. Com isso ligado, quem
@@ -49,10 +56,10 @@ module.exports = {
   // QR e ANTES de apontar o webhook. Ver DEPLOY-NOVO-CLIENTE.md.
   ignorarContatosConhecidos: true,
 
-  // Modelo que a clínica usa para confirmar o agendamento com o paciente. Vai
-  // pronto na notificação do grupo, já preenchido, para a recepção conferir a
-  // data e repassar. A Sofia não envia isso: quando o agendamento é pedido ela
-  // já está desativada naquela conversa, e quem confirma a agenda é humano.
+  // Modelo da clínica, enviado AO PACIENTE automaticamente, logo depois da
+  // resposta da Sofia (fila `filaPosResposta` no server.js). O grupo recebe
+  // uma cópia do que ele já recebeu, para a recepção remarcar se a agenda não
+  // bater. Modelo original da clínica em 16/11/2026, com os emoji deles.
   confirmacaoAgendamento: ({ nome, telefone, preferencia }) => {
     // O telefone chega cru do WhatsApp (5537998765432). A mensagem vai pro
     // paciente, então sai legível.

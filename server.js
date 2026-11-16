@@ -1623,20 +1623,24 @@ function blocosDeContexto({ lead = null, knowledge = [], slots = null } = {}) {
   // marketing, não catálogo — por isso a instrução explícita de não tratar
   // preço de anúncio como preço válido.
   if (lead?.anuncio_origem) {
+    // A regra de como tratar preço e condição de anúncio é DE CADA CLIENTE.
+    // Durante semanas este bloco foi escrito à mão com o mundo da TrailLand —
+    // "tabela oficial", "R$ 1.500 em acessórios", "máquina" — e ia igual para
+    // todos os deploys. Pior: mandava emitir [CONSULTAR_TIME], tag que só os
+    // dois agentes da TrailLand conhecem. A Sofia, a Dani e a Olivia recebiam
+    // ordem de emitir uma tag fora do próprio repertório, e ela pausa a IA.
+    const regra = AGENT_CONFIG.anuncioRegra ||
+      `O texto acima é peça de publicidade, não é a sua fonte de verdade. Nunca repita preço, desconto ou ` +
+      `condição escrita nele, e nunca anuncie a promoção por conta própria: anúncio promete para a linha ` +
+      `inteira e a condição real muda caso a caso. Se a pessoa citar um preço ou condição do anúncio, não ` +
+      `confirme e não negue — diga que vai confirmar essa condição e encaminhe pelo caminho de suporte das ` +
+      `suas instruções.`;
     ctx += `\n\n<origem_anuncio>\n` +
            `Esta pessoa chegou clicando num anúncio. Era isto que ela estava vendo:\n` +
            `${lead.anuncio_origem}\n\n` +
            `Use para saber do que ela já estava interessada: não pergunte de novo o que ela procura, ` +
            `nem ofereça o menu de categorias. Puxe o assunto do próprio anúncio.\n` +
-           `O texto acima é peça de publicidade, não é o catálogo. Preço, desconto e condição de pagamento ` +
-           `você responde SEMPRE pela tabela oficial, mesmo que o anúncio diga outro valor. ` +
-           `Se o cliente citar um preço ou condição do anúncio que não bate com a tabela, não confirme e não negue: ` +
-           `diga que confirma essa condição e retorna, e emita [CONSULTAR_TIME]. Anúncio desatualizado é problema conhecido aqui.\n` +
-           `E NUNCA anuncie você mesma a promoção ou a condição que está escrita aí. O texto do anúncio promete ` +
-           `valor único para a linha inteira, e as condições reais mudam por modelo: repetir o anúncio promete ao ` +
-           `cliente mais do que a loja entrega. Aconteceu de prometer R$ 1.500 em acessórios numa máquina cuja ` +
-           `condição real é R$ 1.000. Use este bloco só para saber o que a pessoa veio ver, e ofereça as condições ` +
-           `pelas regras das suas instruções.\n` +
+           `${regra}\n` +
            `</origem_anuncio>`;
   }
 
