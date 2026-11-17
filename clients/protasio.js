@@ -85,6 +85,17 @@ module.exports = {
       LEAD_QUALIFICADO: "orcamento",
       PRECISA_SUPORTE:  "visita",
     },
+    // As duas primeiras nascem fechadas: são as conversas em que a IA ainda
+    // está trabalhando, e o vendedor não tem nada a fazer nelas. A 1.000 leads
+    // por mês elas seriam a esmagadora maioria dos cartões e enterrariam os
+    // poucos que precisam de ação.
+    //
+    // FECHADAS, NÃO REMOVIDAS, de propósito: a contagem no cabeçalho continua
+    // visível, e ela é o único sinal de que a IA travou. "Em atendimento: 93"
+    // com "Com o vendedor: 0" diz que algo quebrou — sem a coluna, ninguém vê.
+    // E foi lendo conversa da triagem que apareceu cada bug desta semana.
+    // Um clique no cabeçalho abre, e a escolha de quem usa passa a valer.
+    fechadasPorPadrao: ["novo", "em_atendimento"],
   },
 
   // Como tratar preço, desconto e condição que vêm escritos no anúncio. O

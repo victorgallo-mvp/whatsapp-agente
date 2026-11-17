@@ -550,9 +550,19 @@
   const POR_PAGINA = 15;
   let colapsadas = new Set();
   let expandidas = {};   // coluna -> quantos cartões mostrar
-  try { colapsadas = new Set(JSON.parse(localStorage.getItem("colunasColapsadas") || "[]")); } catch {}
+  // Primeira visita: o padrão vem do config do cliente (kanban.fechadasPorPadrao).
+  // Na Protásio nascem fechadas as colunas onde a IA ainda está trabalhando — o
+  // vendedor abre o painel e vê só o que chegou pra ele. Depois que a pessoa
+  // clica em qualquer cabeçalho, a escolha dela passa a valer e o padrão sai
+  // do caminho: preferência de quem usa ganha de default de configuração.
+  let colapsoTocado = false;
+  try {
+    const salvo = localStorage.getItem("colunasColapsadas");
+    if (salvo !== null) { colapsadas = new Set(JSON.parse(salvo)); colapsoTocado = true; }
+  } catch {}
 
   function alternarColuna(key) {
+    colapsoTocado = true;
     if (colapsadas.has(key)) colapsadas.delete(key); else colapsadas.add(key);
     try { localStorage.setItem("colunasColapsadas", JSON.stringify([...colapsadas])); } catch {}
     renderKanban();
@@ -1130,6 +1140,9 @@
       // Rótulos das colunas do kanban, por cliente.
       if (kanban && Array.isArray(kanban.colunas) && kanban.colunas.length) {
         KANBAN = kanban;
+        if (!colapsoTocado && Array.isArray(kanban.fechadasPorPadrao)) {
+          colapsadas = new Set(kanban.fechadasPorPadrao);
+        }
         for (const c of kanban.colunas) {
           const cnt = document.querySelector("#count-" + c.key);
           const h = cnt?.previousElementSibling;
