@@ -111,6 +111,11 @@
   .col-header.h-orc           { background: var(--amber-lt); }
   .col-header.h-orc .col-title    { color: var(--amber); }
   .col-header.h-orc .col-count    { background: var(--amber); color: #fff; }
+  /* Coluna de urgência (reclamação, pós-venda). Vermelho é o único lugar do
+     painel onde ele aparece, justamente pra não competir com nada. */
+  .col-header.h-urgente       { background: var(--red-lt); }
+  .col-header.h-urgente .col-title { color: var(--red); }
+  .col-header.h-urgente .col-count { background: var(--red); color: #fff; }
   .col-header.h-visita        { background: var(--green-lt); }
   .col-header.h-visita .col-title { color: var(--green); }
   .col-header.h-visita .col-count { background: var(--green); color: #fff; }
@@ -703,11 +708,17 @@
       if (!Array.isArray(data)) return;
       leads = data;
 
-      // Classify leads not yet seen
-      const unclassified = leads.filter(l => !(l.phone in leadColumns));
-      if (unclassified.length > 0) {
-        await Promise.all(unclassified.map(l => classifyLead(l.phone)));
+      // A coluna vem calculada do servidor (uma query para todos os leads).
+      // Antes a tela fazia um fetch de /msgs por lead para procurar a tag no
+      // histórico: 100 leads = 100 requisições com até 150 mensagens cada.
+      // Os bumps ao vivo do SSE continuam mandando em leadColumns.
+      for (const l of leads) {
+        if (l.coluna && !(l.phone in leadColumns)) leadColumns[l.phone] = l.coluna;
       }
+      // Fallback: se o servidor não mandou coluna (agente antigo, erro na
+      // query), classifica pelo caminho velho, que continua funcionando.
+      const semColuna = leads.filter(l => !(l.phone in leadColumns));
+      if (semColuna.length) await Promise.all(semColuna.map(l => classifyLead(l.phone)));
       renderKanban();
     } catch (e) { console.error("fetchLeads:", e); }
   }
@@ -731,11 +742,11 @@
       </div>
       ${empresa}
       ${preview ? `<div class="card-preview">${escHtml(preview)}</div>` : ""}
-      <div class="card-footer">
-        <span class="olivia-badge ${olivia ? "on" : "off"}">${olivia ? AGENTE + " ativa" : "Pausada"}</span>
+      ${(!olivia || temp || dot) ? `<div class="card-footer">
+        ${olivia ? "" : `<span class="olivia-badge off">Pausada</span>`}
         ${temp}
         ${dot}
-      </div>
+      </div>` : ""}
     </div>`;
   }
 
@@ -1085,8 +1096,15 @@
       if (kanban && Array.isArray(kanban.colunas) && kanban.colunas.length) {
         KANBAN = kanban;
         for (const c of kanban.colunas) {
-          const h = document.querySelector("#count-" + c.key)?.previousElementSibling;
+          const cnt = document.querySelector("#count-" + c.key);
+          const h = cnt?.previousElementSibling;
           if (h && h.classList.contains("col-title")) h.textContent = c.titulo;
+          // A cor do cabeçalho também vem do config: "Precisa de gente" tem de
+          // ser vermelho, e na Viltrum a mesma coluna é verde. Quem não declara
+          // `cor` fica com a classe que já estava no HTML.
+          if (c.cor && cnt?.parentElement) {
+            cnt.parentElement.className = "col-header " + c.cor;
+          }
         }
         renderKanban();
       }

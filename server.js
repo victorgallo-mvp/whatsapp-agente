@@ -85,6 +85,22 @@ const AGENT_CONFIG = require(`./clients/${CLIENT_SLUG}`);
 // Atalhos usados nas notificações/e-mails — antes o nome da empresa vinha
 // cravado no texto ("Viltrum"), o que fazia todo deploy de outro cliente
 // mandar notificação assinada com o nome errado.
+// Funil padrão — o que estava cravado no HTML do painel. Quem não declara
+// `kanban` no config continua com exatamente isto, rótulo, cor e tag.
+const KANBAN_PADRAO = {
+  colunas: [
+    { key: "novo",           titulo: "Novo Lead",       cor: "h-novo" },
+    { key: "em_atendimento", titulo: "Em Atendimento",  cor: "h-atend" },
+    { key: "orcamento",      titulo: "Orçamento",       cor: "h-orc" },
+    { key: "visita",         titulo: "Visita Agendada", cor: "h-visita" },
+  ],
+  tags: {
+    LEAD_CAPTURADO:    "orcamento",
+    LEAD_QUALIFICADO:  "orcamento",
+    VISITA_SOLICITADA: "visita",
+  },
+};
+
 const EMPRESA = AGENT_CONFIG.company;
 const AGENTE  = AGENT_CONFIG.name;
 
@@ -2686,8 +2702,49 @@ app.get("/api/leads", async (req, res) => {
        LEFT JOIN LATERAL (
          SELECT content, role FROM mensagens WHERE user_id = l.phone ORDER BY created_at DESC LIMIT 1
        ) m ON TRUE
-       ORDER BY l.last_interaction_at DESC NULLS LAST LIMIT 100`
+       ORDER BY l.last_interaction_at DESC NULLS LAST LIMIT $1`,
+      [Math.min(Math.max(parseInt(req.query.limit, 10) || 200, 1), 1000)]
     );
+
+    // Coluna do kanban calculada AQUI, numa query só. A tela fazia um fetch de
+    // /msgs por lead não classificado para procurar a tag no histórico: com 100
+    // leads eram 100 requisições trazendo até 150 mensagens cada, ~15 mil
+    // mensagens para pintar quatro colunas. A 1.000 leads por mês isso deixa o
+    // painel inutilizável no primeiro carregamento.
+    const kb = AGENT_CONFIG.kanban || KANBAN_PADRAO;
+    const tags = Object.keys(kb.tags || {}).filter(t => /^[A-Z_]+$/.test(t));
+    if (result.rows.length && tags.length) {
+      const phones = result.rows.map(r => r.phone);
+      const sel = tags.map((t, i) => `bool_or(content LIKE '%[${t}]%') AS t${i}`).join(", ");
+      const agg = await db.query(
+        `SELECT user_id,
+                min(created_at) FILTER (WHERE role = 'assistant') AS t_ia,
+                max(created_at) FILTER (WHERE role = 'user')      AS t_user,
+                ${sel}
+         FROM mensagens WHERE user_id = ANY($1) GROUP BY user_id`,
+        [phones]
+      );
+      const porFone = {};
+      for (const a of agg.rows) porFone[a.user_id] = a;
+      const peso = k => kb.colunas.findIndex(c => c.key === k);
+      for (const l of result.rows) {
+        const a = porFone[l.phone];
+        if (!a) { l.coluna = "novo"; continue; }
+        // Tag manda, e a coluna mais à direita vence: quem foi qualificado e
+        // depois abriu reclamação está na reclamação, não preso com o vendedor.
+        let col = null;
+        tags.forEach((t, i) => {
+          if (!a["t" + i]) return;
+          const c = kb.tags[t];
+          if (col === null || peso(c) > peso(col)) col = c;
+        });
+        if (col) { l.coluna = col; continue; }
+        // Sem tag: se o cliente voltou a falar depois da primeira resposta da
+        // IA, a conversa está acontecendo. Se não, ele só chegou.
+        l.coluna = (a.t_ia && a.t_user && new Date(a.t_user) > new Date(a.t_ia))
+          ? "em_atendimento" : "novo";
+      }
+    }
 
     // Pendência e grupo de follow-up decididos AQUI, pela régua do config, não
     // na tela. É o mesmo motivo da nota: duas telas lendo os mesmos campos
@@ -3520,19 +3577,7 @@ app.get("/", (req, res) => res.json({
   // O painel é o mesmo HTML para todos os deploys, então os rótulos das colunas
   // e as tags que movem o lead vêm daqui. O default é o funil da Viltrum, que
   // era o que estava cravado no HTML.
-  kanban: AGENT_CONFIG.kanban || {
-    colunas: [
-      { key: "novo",           titulo: "Novo Lead" },
-      { key: "em_atendimento", titulo: "Em Atendimento" },
-      { key: "orcamento",      titulo: "Orçamento" },
-      { key: "visita",         titulo: "Visita Agendada" },
-    ],
-    tags: {
-      LEAD_CAPTURADO:    "orcamento",
-      LEAD_QUALIFICADO:  "orcamento",
-      VISITA_SOLICITADA: "visita",
-    },
-  },
+  kanban: AGENT_CONFIG.kanban || KANBAN_PADRAO,
   calendar: GOOGLE_CALENDAR_ENABLED ? "ativo" : "pendente configuracao",
 }));
 

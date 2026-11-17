@@ -61,6 +61,32 @@ module.exports = {
   // nova, então não é atraso fixo de 8s, é 8s depois da última.
   debounceMs: 8000,
 
+  // Colunas do painel de conversas. Sem isto a Protásio usava o funil padrão,
+  // que é o da Viltrum: "Visita Agendada" ficava PERMANENTEMENTE vazia (só
+  // recebe VISITA_SOLICITADA, que a Dani não emite) e PRECISA_SUPORTE não movia
+  // nada, então reclamação e pós-venda ficavam misturados com quem está
+  // comprando. "Orçamento" também era rótulo errado: ninguém manda orçamento,
+  // o lead foi pro vendedor.
+  //
+  // O painel responde "onde está essa conversa"; a fila responde "o que fazer e
+  // em que ordem". Por isso quatro estados simples aqui e os oito baldes de
+  // pendência lá — sem duplicar trabalho entre as duas telas.
+  //
+  // Prioridade é a ordem das colunas: a mais à direita vence. Quem foi
+  // qualificado e depois abriu reclamação aparece em "Precisa de gente".
+  kanban: {
+    colunas: [
+      { key: "novo",           titulo: "Novo contato",     cor: "h-novo" },
+      { key: "em_atendimento", titulo: "Em atendimento",   cor: "h-atend" },
+      { key: "orcamento",      titulo: "Com o vendedor",   cor: "h-orc" },
+      { key: "visita",         titulo: "Precisa de gente", cor: "h-urgente" },
+    ],
+    tags: {
+      LEAD_QUALIFICADO: "orcamento",
+      PRECISA_SUPORTE:  "visita",
+    },
+  },
+
   // Como tratar preço, desconto e condição que vêm escritos no anúncio. O
   // servidor injeta isto no bloco <origem_anuncio> do contexto. Antes era
   // texto fixo no server.js, escrito para a TrailLand, e ia igual pra todos.
