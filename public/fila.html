@@ -175,7 +175,15 @@
   /* A ordem dos grupos E a ordem de atendimento. O rotulo e a contagem vem do
      config do cliente (qualificacao.baldes), nao estao fixos aqui. */
   .grupo { margin-bottom: 20px; }
-  .grupo-head { display: flex; align-items: baseline; gap: 9px; margin: 0 0 8px 2px; }
+  .grupo-head { display: flex; align-items: baseline; gap: 9px; margin: 0 0 8px 2px; cursor: pointer; user-select: none; }
+  .grupo-head:hover .grupo-titulo { text-decoration: underline; text-underline-offset: 3px; }
+  .grupo-head .seta { font-size: 9px; opacity: .45; }
+  .ver-mais {
+    width: 100%; padding: 9px; font-family: inherit;
+    background: var(--white); border: 1px dashed var(--border); border-radius: 9px;
+    font-size: 12px; font-weight: 700; color: var(--muted); cursor: pointer;
+  }
+  .ver-mais:hover { border-color: var(--muted2); color: var(--dark2); background: var(--surface); }
   .grupo-titulo { font-size: 13px; font-weight: 800; letter-spacing: .3px; text-transform: uppercase; }
   .grupo-sub { font-size: 11.5px; color: var(--muted2); }
   .grupo-n { font-size: 11px; font-weight: 800; padding: 1px 8px; border-radius: 999px; background: var(--border); color: var(--dark2); }
@@ -253,6 +261,25 @@
   let CONFIG = { ativa: false, campos: [], valores: {}, baldes: [], followup: [] };
   let AGENTE = "o agente de IA";
   let pollFallback = null;
+
+  // Colapso e paginação por grupo, mesmo motivo do painel: a 1.000 leads/mês
+  // um grupo junta dezenas de cartões, e "Em triagem" e "Sem triagem" são os
+  // que menos pedem ação. Fica salvo no navegador porque é preferência de quem
+  // usa, não estado do lead.
+  const POR_PAGINA = 10;
+  let fechados = new Set();
+  let abertos = {};   // balde -> quantos mostrar
+  try { fechados = new Set(JSON.parse(localStorage.getItem("filaGruposFechados") || "[]")); } catch {}
+
+  function alternarGrupo(key) {
+    if (fechados.has(key)) fechados.delete(key); else fechados.add(key);
+    try { localStorage.setItem("filaGruposFechados", JSON.stringify([...fechados])); } catch {}
+    render();
+  }
+  function verMais(key) {
+    abertos[key] = (abertos[key] || POR_PAGINA) + POR_PAGINA;
+    render();
+  }
 
   const ORDEM_TEMP = { quente: 0, morno: 1, frio: 2, sem_dados: 3 };
   const ROTULO_TEMP = { quente: "Quente", morno: "Morno", frio: "Frio", sem_dados: "Sem triagem" };
@@ -411,15 +438,24 @@
     if (chaves.has(filtro)) { el.innerHTML = itens.map(cardHtml).join(""); return; }
     const porBalde = {};
     for (const l of itens) { const k = pendDe(l).balde; (porBalde[k] = porBalde[k] || []).push(l); }
-    el.innerHTML = (CONFIG.baldes || []).filter(b => porBalde[b.key]?.length).map(b => `
-      <div class="grupo ${b.cor}">
-        <div class="grupo-head">
+    el.innerHTML = (CONFIG.baldes || []).filter(b => porBalde[b.key]?.length).map(b => {
+      const todos  = porBalde[b.key];
+      const fechado = fechados.has(b.key);
+      const limite = abertos[b.key] || POR_PAGINA;
+      const mostra = fechado ? [] : todos.slice(0, limite);
+      const resto  = todos.length - mostra.length;
+      return `<div class="grupo ${b.cor}">
+        <div class="grupo-head" onclick="alternarGrupo('${b.key}')">
+          <span class="seta">${fechado ? "&#9654;" : "&#9660;"}</span>
           <span class="grupo-titulo">${escHtml(b.titulo)}</span>
-          <span class="grupo-n">${porBalde[b.key].length}</span>
+          <span class="grupo-n">${todos.length}</span>
           <span class="grupo-sub">${escHtml(b.sub || "")}</span>
         </div>
-        <div class="lista">${porBalde[b.key].map(cardHtml).join("")}</div>
-      </div>`).join("");
+        ${fechado ? "" : `<div class="lista">${mostra.map(cardHtml).join("")}
+          ${resto > 0 ? `<button class="ver-mais" onclick="event.stopPropagation(); verMais('${b.key}')">Ver mais ${Math.min(resto, POR_PAGINA)} de ${resto}</button>` : ""}
+        </div>`}
+      </div>`;
+    }).join("");
   }
 
   async function fetchLeads() {

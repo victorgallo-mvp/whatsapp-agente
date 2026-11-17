@@ -120,6 +120,22 @@
   .col-header.h-visita .col-title { color: var(--green); }
   .col-header.h-visita .col-count { background: var(--green); color: #fff; }
 
+  /* Coluna fechada vira uma faixa estreita: continua visível e clicável, e
+     devolve a largura pras colunas onde o vendedor está trabalhando. */
+  .kanban-col.colapsada { flex: 0 0 auto; min-width: 46px; max-width: 46px; }
+  .kanban-col.colapsada .col-header { flex-direction: column; gap: 6px; padding: 9px 4px; height: 100%; justify-content: flex-start; }
+  .kanban-col.colapsada .col-title { writing-mode: vertical-rl; transform: rotate(180deg); letter-spacing: .4px; }
+  .col-header { cursor: pointer; user-select: none; }
+  .col-header:hover { filter: brightness(.97); }
+  .col-header .seta { font-size: 9px; opacity: .45; margin-left: 2px; }
+
+  .ver-mais {
+    width: 100%; padding: 8px; margin-top: 2px; font-family: inherit;
+    background: var(--white); border: 1px dashed var(--border); border-radius: 8px;
+    font-size: 11.5px; font-weight: 700; color: var(--muted); cursor: pointer;
+  }
+  .ver-mais:hover { border-color: var(--muted2); color: var(--dark2); background: var(--surface); }
+
   .col-body {
     flex: 1; overflow-y: auto; padding: 8px;
     display: flex; flex-direction: column; gap: 7px;
@@ -149,11 +165,6 @@
   .card-company {
     font-size: 11px; color: var(--muted);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 3px;
-  }
-  .card-preview {
-    font-size: 11.5px; color: var(--muted);
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    margin-bottom: 6px; line-height: 1.4;
   }
   .card-footer { display: flex; align-items: center; gap: 5px; justify-content: space-between; }
   .olivia-badge { font-size: 9.5px; font-weight: 700; padding: 1px 7px; border-radius: 999px; }
@@ -395,30 +406,30 @@
   <!-- Kanban -->
   <div class="kanban-area">
     <div class="kanban-col">
-      <div class="col-header h-novo">
+      <div class="col-header h-novo" onclick="alternarColuna('novo')">
         <span class="col-title">Novo Lead</span>
-        <span class="col-count" id="count-novo">—</span>
+        <span class="col-count" id="count-novo">—</span><span class="seta" id="seta-novo">&#9660;</span>
       </div>
       <div class="col-body" id="cards-novo"><div class="col-empty">Carregando...</div></div>
     </div>
     <div class="kanban-col">
-      <div class="col-header h-atend">
+      <div class="col-header h-atend" onclick="alternarColuna('em_atendimento')">
         <span class="col-title">Em Atendimento</span>
-        <span class="col-count" id="count-em_atendimento">—</span>
+        <span class="col-count" id="count-em_atendimento">—</span><span class="seta" id="seta-em_atendimento">&#9660;</span>
       </div>
       <div class="col-body" id="cards-em_atendimento"><div class="col-empty">Carregando...</div></div>
     </div>
     <div class="kanban-col">
-      <div class="col-header h-orc">
+      <div class="col-header h-orc" onclick="alternarColuna('orcamento')">
         <span class="col-title">Orçamento</span>
-        <span class="col-count" id="count-orcamento">—</span>
+        <span class="col-count" id="count-orcamento">—</span><span class="seta" id="seta-orcamento">&#9660;</span>
       </div>
       <div class="col-body" id="cards-orcamento"><div class="col-empty">Carregando...</div></div>
     </div>
     <div class="kanban-col">
-      <div class="col-header h-visita">
+      <div class="col-header h-visita" onclick="alternarColuna('visita')">
         <span class="col-title">Visita Agendada</span>
-        <span class="col-count" id="count-visita">—</span>
+        <span class="col-count" id="count-visita">—</span><span class="seta" id="seta-visita">&#9660;</span>
       </div>
       <div class="col-body" id="cards-visita"><div class="col-empty">Carregando...</div></div>
     </div>
@@ -531,6 +542,25 @@
   let pollFallback    = null;
   let summaryOpen     = false;
   let leadColumns     = {};   // phone -> 'novo'|'em_atendimento'|'orcamento'|'visita'
+
+  // Colapso e paginação por coluna. A 1.000 leads por mês uma coluna junta
+  // dezenas de cartões, e "Novo contato" costuma ser a maior e a que menos
+  // interessa: o vendedor trabalha nas duas da direita. O colapso fica salvo
+  // no navegador porque é preferência de quem usa, não estado da conversa.
+  const POR_PAGINA = 15;
+  let colapsadas = new Set();
+  let expandidas = {};   // coluna -> quantos cartões mostrar
+  try { colapsadas = new Set(JSON.parse(localStorage.getItem("colunasColapsadas") || "[]")); } catch {}
+
+  function alternarColuna(key) {
+    if (colapsadas.has(key)) colapsadas.delete(key); else colapsadas.add(key);
+    try { localStorage.setItem("colunasColapsadas", JSON.stringify([...colapsadas])); } catch {}
+    renderKanban();
+  }
+  function verMais(key) {
+    expandidas[key] = (expandidas[key] || POR_PAGINA) + POR_PAGINA;
+    renderKanban();
+  }
   let classifying     = new Set();
 
   // ─── UTILS ─────────────────────────────────────────────────
@@ -562,14 +592,6 @@
     return (s || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
   }
 
-  function previewMsg(content, role) {
-    if (!content) return "";
-    if (content.includes("[o cliente enviou uma imagem") || content.includes("[RELAY:ARTE]"))
-      return (role === "user" ? "" : AGENTE + ": ") + "🖼 Imagem";
-    const prefix = role === "user" ? "" : AGENTE + ": ";
-    const clean  = content.replace(/\[.*?\]/g,"").replace(/\|.*$/g,"").trim();
-    return prefix + (clean.length > 55 ? clean.slice(0,55) + "…" : clean);
-  }
 
   function msgTag(content, role) {
     if (role !== "assistant") return "";
@@ -730,7 +752,6 @@
     const olivia  = lead.olivia_ativa !== false;
     const cls     = [active ? "active" : "", (unread && !active) ? "unread" : ""].filter(Boolean).join(" ");
     const empresa = lead.empresa ? `<div class="card-company">${escHtml(lead.empresa)}</div>` : "";
-    const preview = previewMsg(lead.ultima_mensagem, lead.ultima_role);
     const dot     = (unread && !active) ? `<span class="unread-dot"></span>` : "";
     const ROT_TEMP = { quente: "Quente", morno: "Morno", frio: "Frio", sem_dados: "Sem triagem" };
     const temp    = lead.temperatura && lead.temperatura !== "sem_dados"
@@ -741,7 +762,6 @@
         <span class="card-time">${timeAgo(lead.last_interaction_at)}</span>
       </div>
       ${empresa}
-      ${preview ? `<div class="card-preview">${escHtml(preview)}</div>` : ""}
       ${(!olivia || temp || dot) ? `<div class="card-footer">
         ${olivia ? "" : `<span class="olivia-badge off">Pausada</span>`}
         ${temp}
@@ -788,8 +808,23 @@
       const count  = document.getElementById("count-" + key);
       if (!body) continue;
       count.textContent = items.length;
+
+      const col = body.closest(".kanban-col");
+      const fechada = colapsadas.has(key);
+      if (col) col.classList.toggle("colapsada", fechada);
+      const seta = document.getElementById("seta-" + key);
+      if (seta) seta.innerHTML = fechada ? "&#9654;" : "&#9660;";
+      if (fechada) { body.innerHTML = ""; continue; }
+
+      // Só os primeiros, com botão pra trazer mais. Sem isso o innerHTML
+      // reconstrói a coluna inteira a cada evento do SSE, e com dezenas de
+      // cartões isso pisca a tela enquanto alguém está lendo.
+      const limite = expandidas[key] || POR_PAGINA;
+      const mostra = items.slice(0, limite);
+      const resto  = items.length - mostra.length;
       body.innerHTML = items.length
-        ? items.map(cardHtml).join("")
+        ? mostra.map(cardHtml).join("") +
+          (resto > 0 ? `<button class="ver-mais" onclick="verMais('${key}')">Ver mais ${Math.min(resto, POR_PAGINA)} de ${resto}</button>` : "")
         : `<div class="col-empty">Nenhum lead</div>`;
     }
   }

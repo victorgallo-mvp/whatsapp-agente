@@ -77,7 +77,15 @@
   .hint { font-size: 11.5px; color: var(--muted2); margin-left: auto; }
 
   .grupo { margin-bottom: 22px; }
-  .grupo-head { display: flex; align-items: baseline; gap: 9px; margin: 0 0 8px 2px; }
+  .grupo-head { display: flex; align-items: baseline; gap: 9px; margin: 0 0 8px 2px; cursor: pointer; user-select: none; }
+  .grupo-head:hover .grupo-titulo { text-decoration: underline; text-underline-offset: 3px; }
+  .grupo-head .seta { font-size: 9px; opacity: .45; }
+  .ver-mais {
+    width: 100%; padding: 9px; font-family: inherit;
+    background: var(--white); border: 1px dashed var(--border); border-radius: 9px;
+    font-size: 12px; font-weight: 700; color: var(--muted); cursor: pointer;
+  }
+  .ver-mais:hover { border-color: var(--muted2); color: var(--dark2); background: var(--surface); }
   .grupo-titulo { font-size: 13px; font-weight: 800; letter-spacing: .3px; text-transform: uppercase; }
   .grupo-n { font-size: 11px; font-weight: 800; padding: 1px 8px; border-radius: 999px; background: var(--border); color: var(--dark2); }
   .grupo-sub { font-size: 11.5px; color: var(--muted2); }
@@ -196,6 +204,24 @@
   let filtro = "todos";
   let CONFIG = { ativa: false, campos: [], valores: {}, followup: [] };
   let AGENTE = "o agente de IA";
+
+  // Colapso e paginação por grupo. Esta é a tela que mais acumula: lead que
+  // "não é agora" entra e não sai até alguém retomar, então a 1.000 leads por
+  // mês ela cresce para sempre enquanto a fila se renova.
+  const POR_PAGINA = 10;
+  let fechados = new Set();
+  let abertos = {};
+  try { fechados = new Set(JSON.parse(localStorage.getItem("followupGruposFechados") || "[]")); } catch {}
+
+  function alternarGrupo(key) {
+    if (fechados.has(key)) fechados.delete(key); else fechados.add(key);
+    try { localStorage.setItem("followupGruposFechados", JSON.stringify([...fechados])); } catch {}
+    render();
+  }
+  function verMais(key) {
+    abertos[key] = (abertos[key] || POR_PAGINA) + POR_PAGINA;
+    render();
+  }
 
   const ROTULO_TEMP = { quente: "Quente", morno: "Morno", frio: "Frio", sem_dados: "Sem triagem" };
   // Campos que valem numa ligação de retomada. Os de crédito ficam de fora: o
@@ -326,20 +352,31 @@
 
     const por = {};
     for (const l of itens) { const g = grupoDe(l); (por[g] = por[g] || []).push(l); }
-    el.innerHTML = (CONFIG.followup || []).filter(g => por[g.key]?.length).map(g => `
-      <div class="grupo">
-        <div class="grupo-head">
+    el.innerHTML = (CONFIG.followup || []).filter(g => por[g.key]?.length).map(g => {
+      const todos   = por[g.key];
+      const fechado = fechados.has(g.key);
+      const limite  = abertos[g.key] || POR_PAGINA;
+      const mostra  = fechado ? [] : todos.slice(0, limite);
+      const resto   = todos.length - mostra.length;
+      return `<div class="grupo">
+        <div class="grupo-head" onclick="alternarGrupo('${g.key}')">
+          <span class="seta">${fechado ? "&#9654;" : "&#9660;"}</span>
           <span class="grupo-titulo">${esc(g.titulo)}</span>
-          <span class="grupo-n">${por[g.key].length}</span>
+          <span class="grupo-n">${todos.length}</span>
           <span class="grupo-sub">${esc(g.sub || "")}</span>
         </div>
-        <div class="lista">${por[g.key].map(cardHtml).join("")}</div>
-      </div>`).join("");
+        ${fechado ? "" : `<div class="lista">${mostra.map(cardHtml).join("")}
+          ${resto > 0 ? `<button class="ver-mais" onclick="event.stopPropagation(); verMais('${g.key}')">Ver mais ${Math.min(resto, POR_PAGINA)} de ${resto}</button>` : ""}
+        </div>`}
+      </div>`;
+    }).join("");
   }
 
   async function fetchLeads() {
     try {
-      const r = await fetch("/api/leads");
+      // Limite maior que o padrão de propósito: a tela existe pra achar lead
+      // de semanas atrás, que é exatamente o que o default corta primeiro.
+      const r = await fetch("/api/leads?limit=1000");
       leads = await r.json();
       render();
     } catch (e) { console.error("fetchLeads:", e); }
