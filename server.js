@@ -937,7 +937,21 @@ function broadcastSSE(type, data) {
 const pendingMessages   = {};
 const lastResponseTime  = {};
 const processingUsers   = new Set();
-const DEBOUNCE_MS       = 5000;
+// Quanto esperar depois da ÚLTIMA mensagem antes de responder. O timer
+// reinicia a cada mensagem nova, então o valor é o tamanho do silêncio que
+// conta como "o cliente terminou de falar", não um atraso fixo.
+//
+// Por cliente porque o ritmo muda: na Protásio o cliente manda "opa", "blz?",
+// "to procurando uma moto" em mensagens separadas, e com 5s saíam duas
+// respostas desconexas — a segunda repetindo a pergunta da primeira. 8s cobre
+// mais a rajada, ao custo de a conversa de mensagem única ficar 3s mais lenta.
+//
+// O ideal seria esperar enquanto o cliente está digitando ou gravando áudio,
+// mas o Evolution 2.3.7 não expõe rota para assinar presença: existe só
+// chat/sendPresence, que serve para MOSTRAR "digitando" a ele. PRESENCE_UPDATE
+// está no enum de eventos do webhook, mas sem o subscribe do Baileys não há
+// garantia de que chega. Se um dia chegar, é aqui que entra.
+const DEBOUNCE_MS       = AGENT_CONFIG.debounceMs || 5000;
 const POST_RESPONSE_MS  = 5000;
 
 function enfileirarMensagem(userId, item) {
