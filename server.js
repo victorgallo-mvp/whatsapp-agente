@@ -1683,8 +1683,13 @@ function blocosDeContexto({ lead = null, knowledge = [], slots = null } = {}) {
     const { proximosDiasDeAtendimento, feriadosProximos } = require("./clients/_feriados");
     const ag    = AGENT_CONFIG.agenda;
     const agora = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
-    // Passou do último horário do dia: hoje não é mais oferecível.
-    const [hLim, mLim] = String(ag.ultimoHorario || "18:30").split(":").map(Number);
+    // Passou do último horário de HOJE: hoje não é mais oferecível. A janela é
+    // por dia da semana — sábado na Sorrix fecha 11h30 e dia útil 18h30, então
+    // usar um limite único faria ela oferecer sábado de tarde.
+    const janelaHoje = (ag.janelas || {})[agora.getDay()] || (ag.janelas || {}).padrao;
+    const limiteStr  = (janelaHoje?.ultimo || ag.ultimoHorario || "18:30")
+      .replace("h", ":").replace(/:$/, ":00");
+    const [hLim, mLim] = limiteStr.split(":").map(n => parseInt(n, 10) || 0);
     const pularHoje = agora.getHours() * 60 + agora.getMinutes() >= hLim * 60 + mLim;
 
     const dias = proximosDiasDeAtendimento({
@@ -1696,11 +1701,20 @@ function blocosDeContexto({ lead = null, knowledge = [], slots = null } = {}) {
     });
     const fer = feriadosProximos({ dias: 21, extras: ag.feriadosExtras || [], hoje: agora });
 
+    // A janela de horário vai junto de cada data. Sábado na Sorrix é 8h às
+    // 11h30 e dia útil é 9h às 18h30: deixar isso como regra no prompt
+    // obrigaria o modelo a lembrar qual dia é qual, que é a inferência que
+    // falha. Aqui ele lê a faixa ao lado do dia.
+    const janelaDe = d => {
+      const j = (ag.janelas || {})[d.diaSemana] || (ag.janelas || {}).padrao;
+      return j ? ` — das ${j.abre} às ${j.ultimo}` : "";
+    };
     ctx += `\n\n<dias_de_atendimento>\n` +
-           `Estes são os próximos dias em que a clínica atende, na ordem, já sem fim de semana e sem feriado:\n` +
-           dias.map((d, i) => `${i + 1}. ${d.rotulo}${i === 0 && !pularHoje ? " (hoje)" : ""}`).join("\n") + `\n\n` +
-           `OFEREÇA SEMPRE DESTA LISTA, de cima para baixo. Está proibido oferecer data que não está aqui, ` +
-           `e proibido calcular dia da semana ou feriado por conta própria: se não está na lista, a clínica não atende.\n` +
+           `Estes são os próximos dias em que a clínica atende, na ordem, já sem feriado e já sem os dias em que ela não abre:\n` +
+           dias.map((d, i) => `${i + 1}. ${d.rotulo}${janelaDe(d)}${i === 0 && !pularHoje ? " (hoje)" : ""}`).join("\n") + `\n\n` +
+           `OFEREÇA SEMPRE DESTA LISTA, de cima para baixo, e só horário DENTRO da faixa do dia escolhido. ` +
+           `Está proibido oferecer data que não está aqui, oferecer horário fora da faixa daquele dia, ` +
+           `e calcular dia da semana ou feriado por conta própria: se não está na lista, a clínica não atende.\n` +
            (fer.length
              ? `Feriados nas próximas três semanas, caso a pessoa peça um deles: ` +
                fer.map(f => `${f.rotulo} (${f.nome}, ${f.diaSemana})`).join("; ") +
