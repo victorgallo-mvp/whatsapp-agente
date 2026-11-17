@@ -178,6 +178,38 @@
   .card-acao.avaliacao  { background: var(--amber-lt); color: var(--amber);  border-color: #FCD34D; }
   .card-acao.negociacao { background: var(--green-lt); color: var(--green);  border-color: #A7F3B0; }
 
+  /* Linha de fila do cartão: quanto tempo esperando, quem pegou, e o botão.
+     O relógio vira alerta quando passa do aceitável pra temperatura do lead —
+     é isso que faz lead quente parado chamar atenção sem ninguém procurar. */
+  .card-fila { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin: 5px 0 2px; }
+  .espera {
+    font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 5px;
+    background: var(--surface); color: var(--muted); border: 1px solid var(--border);
+  }
+  .espera.estourou { background: var(--red-lt); color: var(--red); border-color: #FECACA; }
+  .dono {
+    font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 5px;
+    background: #EEF2FF; color: #4338CA; border: 1px solid #C7D2FE;
+  }
+  .dono.eu { background: var(--cyan-lt); color: var(--cyan-dk); border-color: #A7F3B0; }
+  .btn-assumir, .btn-devolver {
+    font-family: inherit; font-size: 10.5px; font-weight: 700; cursor: pointer;
+    padding: 2px 9px; border-radius: 999px; margin-left: auto;
+  }
+  .btn-assumir  { background: var(--cyan); color: #fff; border: none; }
+  .btn-assumir:hover { background: var(--cyan-dk); }
+  .btn-devolver { background: var(--white); color: var(--muted); border: 1px solid var(--border); }
+  .btn-devolver:hover { color: var(--dark2); border-color: var(--muted2); }
+
+  /* Seletor de quem está usando a tela, no header. */
+  #eu-sou {
+    font-family: inherit; font-size: 11.5px; font-weight: 600;
+    background: rgba(255,255,255,.1); color: #fff; border: 1px solid rgba(255,255,255,.2);
+    border-radius: 7px; padding: 4px 8px; cursor: pointer;
+  }
+  #eu-sou.vazio { background: rgba(251,191,36,.2); border-color: #fbbf24; color: #fde68a; }
+  #eu-sou option { color: #111827; }
+
   .card-footer { display: flex; align-items: center; gap: 5px; justify-content: space-between; }
   .olivia-badge { font-size: 9.5px; font-weight: 700; padding: 1px 7px; border-radius: 999px; }
   .olivia-badge.on  { background: var(--cyan-lt); color: var(--cyan-dk); }
@@ -403,6 +435,7 @@
     <span class="brand-name"><span class="cc">O</span>LIVIA</span>
     <span class="brand-sub" data-agente="Painel · {AGENTE}">Painel · Olivia</span>
   </div>
+  <select id="eu-sou" class="vazio" style="display:none" onchange="setEu(this.value)" title="Quem está usando esta tela"></select>
   <a class="header-link" id="fila-link" href="/fila" style="display:none">Fila de leads</a>
   <a class="header-link" id="followup-link" href="/followup" style="display:none">Follow-up</a>
   <span id="conn-status" class="disconnected">Conectando...</span>
@@ -756,8 +789,12 @@
       // Antes a tela fazia um fetch de /msgs por lead para procurar a tag no
       // histórico: 100 leads = 100 requisições com até 150 mensagens cada.
       // Os bumps ao vivo do SSE continuam mandando em leadColumns.
+      // A coluna do servidor SOBRESCREVE: ela já considera tag e atribuição, e
+      // sem sobrescrever o cartão não se movia quando alguém assumia o lead —
+      // o valor antigo ficava preso no mapa. O bump do SSE continua servindo
+      // pro intervalo entre dois fetches.
       for (const l of leads) {
-        if (l.coluna && !(l.phone in leadColumns)) leadColumns[l.phone] = l.coluna;
+        if (l.coluna) leadColumns[l.phone] = l.coluna;
       }
       // Fallback: se o servidor não mandou coluna (agente antigo, erro na
       // query), classifica pelo caminho velho, que continua funcionando.
@@ -785,6 +822,18 @@
     const pend = lead.pendencia;
     const acao = (pend && ["suporte","simulacao","avaliacao","negociacao","vendedor"].includes(pend.balde))
       ? `<div class="card-acao ${escHtml(pend.balde)}">${escHtml(pend.titulo)}</div>` : "";
+
+    // Relógio de espera e dono. Só em quem a IA já entregou: antes da passagem
+    // não existe espera, porque não é a vez de ninguém.
+    const esp = espera(lead);
+    const relogio = esp
+      ? `<span class="espera ${esp.estourou ? "estourou" : ""}">${escHtml(textoEspera(esp.min))}</span>` : "";
+    const dono = lead.assumido_por
+      ? `<span class="dono ${lead.assumido_por === EU ? "eu" : ""}">${escHtml(lead.assumido_por)}</span>` : "";
+    const btnAssumir = (lead.passado_em && !lead.assumido_por)
+      ? `<button class="btn-assumir" onclick="assumir('${escHtml(lead.phone)}', event)">Assumir</button>` : "";
+    const btnDevolver = (lead.assumido_por && lead.assumido_por === EU)
+      ? `<button class="btn-devolver" onclick="devolver('${escHtml(lead.phone)}', event)">Devolver</button>` : "";
     return `<div class="card ${cls}" onclick="selectLead('${escHtml(lead.phone)}')">
       <div class="card-top">
         <span class="card-name">${escHtml(lead.nome || lead.phone)}</span>
@@ -792,6 +841,9 @@
       </div>
       ${empresa}
       ${acao}
+      ${(relogio || dono || btnAssumir || btnDevolver) ? `<div class="card-fila">
+        ${relogio}${dono}${btnAssumir}${btnDevolver}
+      </div>` : ""}
       ${(!olivia || temp || dot) ? `<div class="card-footer">
         ${olivia ? "" : `<span class="olivia-badge off">Pausada</span>`}
         ${temp}
@@ -804,8 +856,17 @@
   // Dentro de cada coluna, a nota mais alta vem no topo. Para agente SEM
   // triagem a nota é null em todo mundo, então o critério cai direto na
   // recência e a ordem fica igual à de antes — não precisa de flag por cliente.
+  // Ordem: temperatura, estouro de espera, nota, recência.
+  // A temperatura vem primeiro porque lead quente é prioridade mesmo quando
+  // acabou de chegar — se o estouro viesse antes, um frio parado há 10h subiria
+  // acima de um quente de 2 minutos, que é o contrário do que a fila quer.
+  // Dentro da mesma temperatura, quem já esperou demais passa na frente.
+  const RANK_TEMP = { quente: 0, morno: 1, frio: 2, sem_dados: 3 };
   function ordemLead(a, b) {
-    return ((b.score ?? -1) - (a.score ?? -1)) ||
+    const ea = espera(a), eb = espera(b);
+    return ((RANK_TEMP[a.temperatura] ?? 3) - (RANK_TEMP[b.temperatura] ?? 3)) ||
+           ((eb?.estourou ? 1 : 0) - (ea?.estourou ? 1 : 0)) ||
+           ((b.score ?? -1) - (a.score ?? -1)) ||
            (new Date(b.last_interaction_at || 0) - new Date(a.last_interaction_at || 0));
   }
 
@@ -1108,6 +1169,65 @@
   // só o que aparece no piscar antes da rota "/" responder.
   let AGENTE = "Olivia";
   let QUALIF = { ativa: false, campos: [], valores: {} };
+  // Quem está usando a tela. Não é login: com um WhatsApp só, o sistema não
+  // sabe se quem digitou foi a Dani ou o Beto, então a pessoa se identifica
+  // escolhendo. Serve pra dois não pegarem o mesmo lead, não pra auditar.
+  let EU = localStorage.getItem("euSou") || "";
+  let ESPERA = null;   // { quente: 15, morno: 120, ... } em minutos
+
+  function setEu(v) {
+    EU = v || "";
+    try { localStorage.setItem("euSou", EU); } catch {}
+    const sel = document.getElementById("eu-sou");
+    if (sel) sel.classList.toggle("vazio", !EU);
+    renderKanban();
+  }
+
+  // Minutos desde que a IA entregou o lead, e se já passou do aceitável pra
+  // temperatura dele. Lead quente que espera é lead quente perdido; o jeito de
+  // isso não acontecer é a demora aparecer, não depender de alguém lembrar.
+  function espera(lead) {
+    if (!lead.passado_em || lead.assumido_por) return null;
+    const min = Math.floor((Date.now() - new Date(lead.passado_em)) / 60000);
+    const teto = ESPERA ? (ESPERA[lead.temperatura || "sem_dados"] ?? ESPERA.sem_dados) : null;
+    return { min, estourou: teto != null && min >= teto };
+  }
+  function textoEspera(min) {
+    if (min < 1) return "agora";
+    if (min < 60) return min + " min esperando";
+    const h = Math.floor(min / 60);
+    if (h < 24) return h + "h esperando";
+    return Math.floor(h / 24) + "d esperando";
+  }
+
+  async function assumir(phone, ev) {
+    if (ev) ev.stopPropagation();
+    if (!EU) { toast("Escolha quem você é no topo da tela"); return; }
+    try {
+      const r = await fetch(`/api/leads/${encodeURIComponent(phone)}/assumir`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ quem: EU }),
+      });
+      if (r.status === 409) {
+        const j = await r.json();
+        toast(`Já assumido por ${j.por || "outra pessoa"}`);
+        await fetchLeads();
+        return;
+      }
+      if (!r.ok) throw new Error("falhou");
+      toast(`Assumido por ${EU}`);
+      await fetchLeads();
+    } catch (e) { toast("Erro ao assumir"); console.error(e); }
+  }
+
+  async function devolver(phone, ev) {
+    if (ev) ev.stopPropagation();
+    try {
+      await fetch(`/api/leads/${encodeURIComponent(phone)}/devolver`, { method: "POST" });
+      toast("Devolvido para a fila");
+      await fetchLeads();
+    } catch (e) { toast("Erro ao devolver"); }
+  }
   // Colunas e tags vêm da rota "/" (AGENT_CONFIG.kanban). Antes os rótulos
   // estavam no HTML e as tags cravadas no JS, as duas coisas no mundo da
   // Viltrum: o painel da clínica procurava [VISITA_SOLICITADA] e o lead que
@@ -1144,7 +1264,19 @@
       if (qualificacao) {
         document.getElementById("fila-link").style.display = "";
         document.getElementById("followup-link").style.display = "";
-        fetch("/api/qualificacao").then(x => x.json()).then(q => { QUALIF = q; }).catch(() => {});
+        fetch("/api/qualificacao").then(x => x.json()).then(q => {
+          QUALIF = q;
+          ESPERA = q.esperaMaxima || null;
+          // Seletor de quem usa a tela, montado a partir do config do cliente.
+          const sel = document.getElementById("eu-sou");
+          if (sel && Array.isArray(q.vendedores) && q.vendedores.length) {
+            sel.innerHTML = `<option value="">quem é você?</option>` +
+              q.vendedores.map(v => `<option value="${v}"${v === EU ? " selected" : ""}>${v}</option>`).join("");
+            sel.style.display = "";
+            sel.classList.toggle("vazio", !EU);
+          }
+          renderKanban();
+        }).catch(() => {});
       }
       if (company) {
         document.title = `${company} — Painel ${AGENTE}`;

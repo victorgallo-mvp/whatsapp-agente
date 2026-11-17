@@ -150,6 +150,32 @@
      os grupos ja aparecem na lista com titulo e contagem, o tile grande
      repetia a informacao duas vezes. Virou uma fileira de pills: mesma
      contagem, mesmo clique pra filtrar, um quinto da altura. */
+  /* Relógio de espera: cinza enquanto está dentro do aceitável, vermelho quando
+     passa. O limite vem de esperaMaxima no config, por temperatura. */
+  .espera {
+    font-size: 10.5px; font-weight: 700; padding: 1px 7px; border-radius: 5px;
+    background: #F3F4F6; color: #6B7280; border: 1px solid #E5E7EB;
+  }
+  .espera.estourou { background: #FEF2F2; color: #DC2626; border-color: #FECACA; }
+  .estado.dono { background: #EEF2FF; color: #4338CA; }
+  .estado.dono.eu { background: #DCFCE7; color: #15803D; }
+  .btn-assumir, .btn-devolver {
+    font-family: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer;
+    padding: 7px 12px; border-radius: 8px; text-align: center;
+  }
+  .btn-assumir { background: #0F766E; color: #fff; border: none; }
+  .btn-assumir:hover { background: #115E59; }
+  .btn-devolver { background: #fff; color: #6B7280; border: 1px solid #E5E7EB; }
+  .btn-devolver:hover { color: #111827; border-color: #9CA3AF; }
+
+  #eu-sou {
+    font-family: inherit; font-size: 11.5px; font-weight: 600;
+    background: rgba(255,255,255,.1); color: #fff; border: 1px solid rgba(255,255,255,.2);
+    border-radius: 7px; padding: 5px 8px; cursor: pointer;
+  }
+  #eu-sou.vazio { background: rgba(251,191,36,.2); border-color: #fbbf24; color: #fde68a; }
+  #eu-sou option { color: #111827; }
+
   .pills { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
   .pill {
     display: inline-flex; align-items: center; gap: 6px;
@@ -229,6 +255,7 @@
     <span class="brand-sub">Fila de leads</span>
   </div>
   <div class="header-links">
+    <select id="eu-sou" class="vazio" style="display:none" onchange="setEu(this.value)" title="Quem está usando esta tela"></select>
     <a href="/dashboard">Conversas</a>
     <a href="/followup">Follow-up</a>
     <span id="conn-status" class="disconnected">Conectando...</span>
@@ -261,6 +288,58 @@
   let CONFIG = { ativa: false, campos: [], valores: {}, baldes: [], followup: [] };
   let AGENTE = "o agente de IA";
   let pollFallback = null;
+  // Quem está na tela. Não é login: com um WhatsApp só não há como o sistema
+  // saber quem digitou, então a pessoa se identifica. Serve pra dois não
+  // pegarem o mesmo lead.
+  let EU = localStorage.getItem("euSou") || "";
+  let ESPERA = null;
+
+  function setEu(v) {
+    EU = v || "";
+    try { localStorage.setItem("euSou", EU); } catch {}
+    const sel = document.getElementById("eu-sou");
+    if (sel) sel.classList.toggle("vazio", !EU);
+    render();
+  }
+
+  // Minutos desde que a IA entregou, e se já passou do aceitável pra
+  // temperatura. Lead quente que espera é lead quente perdido, e o que faz
+  // isso não acontecer é a demora ficar visível — não alguém lembrar.
+  function espera(l) {
+    if (!l.passado_em || l.assumido_por) return null;
+    const min = Math.floor((Date.now() - new Date(l.passado_em)) / 60000);
+    const teto = ESPERA ? (ESPERA[tempDe(l)] ?? ESPERA.sem_dados) : null;
+    return { min, estourou: teto != null && min >= teto };
+  }
+  function textoEspera(min) {
+    if (min < 1) return "agora";
+    if (min < 60) return min + " min";
+    const h = Math.floor(min / 60);
+    return h < 24 ? h + "h" : Math.floor(h / 24) + "d";
+  }
+
+  async function assumir(phone, ev) {
+    if (ev) ev.preventDefault();
+    if (!EU) { alert("Escolha quem você é no topo da tela."); return; }
+    try {
+      const r = await fetch(`/api/leads/${encodeURIComponent(phone)}/assumir`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ quem: EU }),
+      });
+      if (r.status === 409) {
+        const j = await r.json();
+        alert(`Este lead já foi assumido por ${j.por || "outra pessoa"}.`);
+      }
+      await fetchLeads();
+    } catch (e) { console.error(e); }
+  }
+  async function devolver(phone, ev) {
+    if (ev) ev.preventDefault();
+    try {
+      await fetch(`/api/leads/${encodeURIComponent(phone)}/devolver`, { method: "POST" });
+      await fetchLeads();
+    } catch (e) { console.error(e); }
+  }
 
   // Colapso e paginação por grupo, mesmo motivo do painel: a 1.000 leads/mês
   // um grupo junta dezenas de cartões, e "Em triagem" e "Sem triagem" são os
@@ -282,6 +361,7 @@
   }
 
   const ORDEM_TEMP = { quente: 0, morno: 1, frio: 2, sem_dados: 3 };
+  const RANK_TEMP = { quente: 0, morno: 1, frio: 2, sem_dados: 3 };
   const ROTULO_TEMP = { quente: "Quente", morno: "Morno", frio: "Frio", sem_dados: "Sem triagem" };
   // Campos que aparecem na linha do lead, nesta ordem. "nome", "cidade" e
   // "observacoes" têm lugar próprio no cartão. O que o cliente não declarou
@@ -289,7 +369,7 @@
   // Os fatos que decidem a venda, nesta ordem. Era "todos os campos menos
   // alguns ocultos", o que enchia o cartao com 9 ou 10 itens e escondia o que
   // importa. Troca e entrada saem daqui porque a caixa de acao ja as nomeia.
-  const FATOS = ["pagamento", "prazo", "cnh", "cpf", "renda"];
+  const FATOS = ["pagamento", "cnh", "cpf", "renda"];
   const OCULTOS = new Set(["nome", "observacoes", "interesse", "modelo"]);
   // Valores que merecem destaque de alerta pro vendedor.
   const NEGATIVOS = new Set(["restrito", "nao", "pesquisando"]);
@@ -364,7 +444,17 @@
       ? `<div class="acao-box"><b>${escHtml(p.titulo)}</b><ul>${p.acoes.map(a => `<li>${escHtml(a)}</li>`).join("")}</ul></div>`
       : "";
 
-    const estado = esperando
+    const esp = espera(l);
+    const relogio = esp
+      ? `<span class="espera ${esp.estourou ? "estourou" : ""}">${escHtml(textoEspera(esp.min))} esperando</span>` : "";
+    const btnAssumir = (l.passado_em && !l.assumido_por)
+      ? `<button class="btn-assumir" onclick="assumir('${escHtml(l.phone)}', event)">Assumir</button>` : "";
+    const btnDevolver = (l.assumido_por && l.assumido_por === EU)
+      ? `<button class="btn-devolver" onclick="devolver('${escHtml(l.phone)}', event)">Devolver</button>` : "";
+
+    const estado = l.assumido_por
+      ? `<span class="estado dono ${l.assumido_por === EU ? "eu" : ""}">${escHtml(l.assumido_por)} assumiu</span>`
+      : esperando
       ? `<span class="estado">Aguardando vendedor</span>`
       : l.olivia_ativa === false ? `<span class="estado">Com atendente</span>`
       : `<span class="estado ia">${escHtml(AGENTE)} atendendo</span>`;
@@ -380,6 +470,7 @@
           <span class="fone">${escHtml(l.phone)}${cidade}</span>
           <span class="tempo">${timeAgo(l.last_interaction_at)}</span>
           ${estado}
+          ${relogio}
         </div>
         ${acaoHtml}
         ${campos.modelo ? `<div class="moto">${escHtml(campos.modelo)}</div>` : ""}
@@ -390,6 +481,7 @@
       <div class="acoes">
         <a class="btn-wpp" href="https://wa.me/${foneWA(l.phone)}" target="_blank" rel="noopener">Abrir WhatsApp</a>
         <a class="btn-conv" href="/dashboard?phone=${encodeURIComponent(l.phone)}">Ver conversa</a>
+        ${btnAssumir}${btnDevolver}
       </div>
     </div>`;
   }
@@ -422,10 +514,14 @@
         return [l.nome, l.phone, c.nome, c.modelo, c.cidade, c.moto_troca].some(v => (v || "").toLowerCase().includes(q));
       });
     }
-    // Urgencia da pendencia primeiro (= ordem de atendimento), nota depois,
-    // e quem falou por ultimo como desempate.
+    // Urgencia da pendencia, temperatura, estouro de espera, nota, recencia.
+    // Temperatura antes do estouro: um frio parado ha 10h nao deve subir acima
+    // de um quente que chegou agora. Dentro da mesma temperatura, quem esperou
+    // demais passa na frente de quem tem nota melhor.
     itens.sort((a, b) =>
       (pendDe(a).urgencia - pendDe(b).urgencia) ||
+      ((RANK_TEMP[tempDe(a)] ?? 3) - (RANK_TEMP[tempDe(b)] ?? 3)) ||
+      ((espera(b)?.estourou ? 1 : 0) - (espera(a)?.estourou ? 1 : 0)) ||
       ((b.score ?? -1) - (a.score ?? -1)) ||
       (new Date(b.last_interaction_at || 0) - new Date(a.last_interaction_at || 0))
     );
@@ -497,6 +593,14 @@
     try {
       const [info, cfg] = await Promise.all([fetch("/").then(r => r.json()), fetch("/api/qualificacao").then(r => r.json())]);
       if (info.agent) AGENTE = info.agent;
+      ESPERA = cfg.esperaMaxima || null;
+      const sel = document.getElementById("eu-sou");
+      if (sel && Array.isArray(cfg.vendedores) && cfg.vendedores.length) {
+        sel.innerHTML = `<option value="">quem é você?</option>` +
+          cfg.vendedores.map(v => `<option value="${v}"${v === EU ? " selected" : ""}>${v}</option>`).join("");
+        sel.style.display = "";
+        sel.classList.toggle("vazio", !EU);
+      }
       if (info.company) {
         document.title = `${info.company} — Fila de leads`;
         document.querySelector(".brand-name").innerHTML = `<span class="cc">${escHtml(info.company[0])}</span>${escHtml(info.company.slice(1).toUpperCase())}`;

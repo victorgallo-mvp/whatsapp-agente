@@ -173,6 +173,17 @@ async function initDb() {
   await db.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS score INT`);
   await db.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS temperatura TEXT`);
   await db.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS qualificacao_updated_at TIMESTAMPTZ`);
+  // Fila de atendimento humano. `passado_em` é quando a IA entregou o lead e
+  // `assumido_em`/`assumido_por` é quando alguém pegou. A diferença entre os
+  // dois é o tempo de resposta, que é o número que decide se o lead quente
+  // está sendo atendido rápido — e hoje ninguém mede, então ninguém sabe.
+  await db.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS passado_em TIMESTAMPTZ`);
+  await db.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS assumido_por TEXT`);
+  await db.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS assumido_em TIMESTAMPTZ`);
+  // Marca que o grupo já foi cobrado por este lead, pra cobrança não virar spam
+  // a cada rodada. Um aviso que repete de 5 em 5 minutos é um aviso que a
+  // equipe aprende a ignorar, e aí deixa de ser aviso.
+  await db.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS escalado_em TIMESTAMPTZ`);
 
   // Migra dados existentes da tabela clientes
   await db.query(`
@@ -762,7 +773,7 @@ function normalizarOpcao(v) {
 
 // O trecho citado pelo extrator tem que existir na fala do cliente. Sem esta
 // trava o Haiku preenchia por ausência: "tem CB 500 aí?" virava cnh=nao,
-// entrada=nao, prazo=pesquisando na primeira mensagem, e como a mesclagem
+// entrada=nao na primeira mensagem, e como a mesclagem
 // carrega o valor adiante, "sem habilitação" grudava no lead até o fim. Pedir
 // a citação e conferir tira a dedução do caminho (LICOES-DE-PROMPT, item 1).
 // Confere por palavras, não por substring exata: o modelo às vezes aparta ou
@@ -794,7 +805,7 @@ async function extrairQualificacao(config, history, anterior = {}) {
     max_tokens: 900,
     system:     `Você lê conversas de atendimento da ${config.company} e preenche uma ficha em JSON.\n` +
                 `null é a resposta padrão de todo campo. Você só preenche quando o CLIENTE disse aquilo com palavras, e copia o trecho dele. ` +
-                `Não deduza por ausência: quem não falou de CNH não é "nao", quem não falou de prazo não é "pesquisando", quem não falou de entrada não é "nao". ` +
+                `Não deduza por ausência: quem não falou de CNH não é "nao", quem não falou de renda não é "sem_comprovante", quem não falou de entrada não é "nao". ` +
                 `O que a atendente perguntou, ofereceu ou supôs não conta. A atendente se chama ${config.name}: isso nunca é o nome do cliente. ` +
                 `Quando o campo lista opções, o valor é exatamente uma delas.`,
     messages:   [{ role: "user", content:
@@ -2030,7 +2041,9 @@ async function verificarGatilhos(reply, userId) {
     // Marca a etapa para a fila separar quem precisa de gente AGORA
     // (reclamação, pós-venda, assunto fora do alcance da IA) de quem está na
     // triagem normal. Sem isso o lead de reclamação cai no meio dos outros.
-    await db.query(`UPDATE leads SET olivia_ativa = FALSE, stage = 'suporte' WHERE phone = $1`, [userId]);
+    await db.query(
+      `UPDATE leads SET olivia_ativa = FALSE, stage = 'suporte',
+              passado_em = COALESCE(passado_em, NOW()) WHERE phone = $1`, [userId]);
     await notificarResponsavel(
       `${AGENTE} solicitou suporte — ` + nome,
       `${AGENTE} identificou que esse atendimento precisa de um consultor.\n\nCliente: ${nome}\nTelefone: ${telefone}\n` +
@@ -2266,6 +2279,9 @@ async function verificarGatilhos(reply, userId) {
     const foneWA = formatarTelefoneWA(userId);
 
     await upsertLead(userId, { nome: campo("Nome") || null, stage: "qualificado" });
+    // Entrou na fila humana agora. COALESCE pra não reiniciar o relógio se a
+    // IA passar o mesmo lead duas vezes: o tempo de espera conta da primeira.
+    await db.query(`UPDATE leads SET passado_em = COALESCE(passado_em, NOW()) WHERE phone = $1`, [userId]);
     await db.query(`UPDATE leads SET olivia_ativa = FALSE WHERE phone = $1`, [userId]);
 
     const q    = await atualizarQualificacao(userId, { forcar: true });
@@ -2711,6 +2727,7 @@ app.get("/api/leads", async (req, res) => {
               l.anuncio_id, l.anuncio_ctwa_clid, l.anuncio_url, l.anuncio_fonte,
               l.profile, l.last_summary,
               l.qualificacao, l.score, l.temperatura, l.qualificacao_updated_at, l.created_at,
+              l.passado_em, l.assumido_por, l.assumido_em,
               m.content AS ultima_mensagem, m.role AS ultima_role
        FROM leads l
        LEFT JOIN LATERAL (
@@ -2742,6 +2759,9 @@ app.get("/api/leads", async (req, res) => {
       for (const a of agg.rows) porFone[a.user_id] = a;
       const peso = k => kb.colunas.findIndex(c => c.key === k);
       for (const l of result.rows) {
+        // Assumido vence tudo: a coluna precisa significar "tem gente
+        // cuidando", e tag de passagem não garante que alguém pegou.
+        if (l.assumido_por && kb.colunaAssumido) { l.coluna = kb.colunaAssumido; continue; }
         const a = porFone[l.phone];
         if (!a) { l.coluna = "novo"; continue; }
         // Tag manda, e a coluna mais à direita vence: quem foi qualificado e
@@ -2876,6 +2896,54 @@ app.get("/fila", (req, res) => {
 // Painel de leitura. Existe separado das três telas operacionais porque o
 // objetivo é oposto: elas escondem, agrupam e paginam pra alguém AGIR; esta
 // não esconde nada, pra alguém ENTENDER. Serve pra ler conversa e diagnosticar.
+// Assumir e devolver lead. Não é autenticação — é COORDENAÇÃO: com um número
+// de WhatsApp só, o sistema não tem como saber se quem digitou foi a Dani ou o
+// Beto, então quem assume se identifica por escolha na tela. O objetivo é os
+// dois não caírem no mesmo lead e nenhum lead ficar sem dono, não auditar.
+app.post("/api/leads/:phone/assumir", async (req, res) => {
+  try {
+    const phone = sanitizePhone(req.params.phone);
+    const quem  = String(req.body?.quem || "").trim().slice(0, 40);
+    if (!quem) return res.status(400).json({ error: "informe quem está assumindo" });
+
+    // Não deixa roubar lead de quem já pegou, a menos que mande `forcar`.
+    // Dois vendedores clicando ao mesmo tempo: o primeiro fica, o segundo
+    // recebe 409 e a tela mostra quem pegou — em vez de sobrescrever calado.
+    const r = await db.query(
+      `UPDATE leads SET assumido_por = $2, assumido_em = NOW(), olivia_ativa = FALSE
+       WHERE phone = $1 AND (assumido_por IS NULL OR assumido_por = $2 OR $3 = TRUE)
+       RETURNING assumido_por, assumido_em`,
+      [phone, quem, req.body?.forcar === true]
+    );
+    if (!r.rowCount) {
+      const atual = await db.query(`SELECT assumido_por FROM leads WHERE phone = $1`, [phone]);
+      return res.status(409).json({ error: "já assumido", por: atual.rows[0]?.assumido_por || null });
+    }
+    broadcastSSE("leads_update", { phone });
+    console.log("[ASSUMIR]", phone, "->", quem);
+    res.json({ ok: true, assumido_por: r.rows[0].assumido_por, assumido_em: r.rows[0].assumido_em });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/leads/:phone/devolver", async (req, res) => {
+  try {
+    const phone = sanitizePhone(req.params.phone);
+    // Zera passado_em junto: o lead devolvido entra na fila de novo, e o relógio
+    // dele recomeça agora — contar desde a primeira passagem mostraria "3 dias
+    // esperando" num lead que acabou de voltar.
+    await db.query(
+      `UPDATE leads SET assumido_por = NULL, assumido_em = NULL,
+              passado_em = NOW(), escalado_em = NULL WHERE phone = $1`, [phone]);
+    broadcastSSE("leads_update", { phone });
+    console.log("[DEVOLVER]", phone);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get("/tudo", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "admin.html"));
 });
@@ -2899,6 +2967,8 @@ app.get("/api/qualificacao", (req, res) => {
     // (`pendencia`, `followup[].quando`) rodam no servidor e não vêm aqui: a
     // tela recebe o grupo já decidido em cada lead, para não existirem duas
     // réguas, uma no config e outra no JavaScript.
+    vendedores:   AGENT_CONFIG.vendedores || [],
+    esperaMaxima: AGENT_CONFIG.esperaMaxima || null,
     baldes:   (q.baldes || []).map(b => ({ ...b })),
     followup: (q.followup || []).map(({ quando, ...r }) => r),
   });
@@ -2915,43 +2985,43 @@ app.post("/admin/seed-ficticio", async (req, res) => {
   if (!AGENT_CONFIG.qualificacao) return res.status(400).json({ error: "só faz sentido em agente com qualificação" });
   const PERFIS = [
     { n: "[T] Marcos Vieira", d: 0, st: "suporte", sc: 62, t: "morno",
-      c: { nome: "Marcos", cidade: "Torres", modelo: "CB 300 2019", pagamento: "a_vista", tem_troca: "nao", prazo: "imediato", cnh: "sim", observacoes: "Comprou em setembro, reclama de ruido no motor e diz que levou duas vezes na oficina." },
+      c: { nome: "Marcos", cidade: "Torres", modelo: "CB 300 2019", pagamento: "a_vista", tem_troca: "nao", cnh: "sim", observacoes: "Comprou em setembro, reclama de ruido no motor e diz que levou duas vezes na oficina." },
       msgs: [["user", "comprei uma moto com vocês em setembro e ela tá com um ruído no motor"], ["assistant", "Sinto muito por isso. Vou te direcionar pro pós-venda agora.\n[PRECISA_SUPORTE] Cliente: Marcos | Assunto: ruído no motor, moto comprada em setembro"]] },
     { n: "[T] Rafael Souza", d: 0, st: "qualificado", sc: 88, t: "quente",
-      c: { nome: "Rafael", cidade: "Osório", modelo: "XRE 300", pagamento: "financiamento", tem_troca: "sim", moto_troca: "Titan 160 2020, 18 mil km", entrada: "sim", valor_entrada: "a moto da troca", cnh: "sim", cpf: "livre", renda: "comprovavel", prestacao: "700 reais", prazo: "imediato", ano_moto: "2021", idade: "32", observacoes: "Documento da Titan em dia, IPVA pago. Quer fechar essa semana." },
+      c: { nome: "Rafael", cidade: "Osório", modelo: "XRE 300", pagamento: "financiamento", tem_troca: "sim", moto_troca: "Titan 160 2020, 18 mil km", entrada: "sim", valor_entrada: "a moto da troca", cnh: "sim", cpf: "livre", renda: "comprovavel", prestacao: "700 reais", ano_moto: "2021", idade: "32", observacoes: "Documento da Titan em dia, IPVA pago. Quer fechar essa semana." },
       msgs: [["user", "queria uma XRE 300, tenho uma Titan 160 2020 pra dar de entrada"], ["assistant", "Dá sim. Mais ou menos quantos quilômetros tem a Titan?"], ["user", "uns 18 mil, tá bem conservada e com documento em dia"], ["assistant", "Anotado. Vou passar teu caso pro vendedor agora.\n[LEAD_QUALIFICADO] Nome: Rafael | Cidade: Osório | Interesse: XRE 300"]] },
     { n: "[T] Carlos Pereira", d: 0, st: "qualificado", sc: 76, t: "quente",
-      c: { nome: "Carlos", cidade: "Capão da Canoa", modelo: "Fazer 250", pagamento: "financiamento", tem_troca: "nao", entrada: "sim", valor_entrada: "8 mil", cnh: "sim", cpf: "livre", renda: "comprovavel", prestacao: "600 reais", prazo: "imediato", idade: "28" },
+      c: { nome: "Carlos", cidade: "Capão da Canoa", modelo: "Fazer 250", pagamento: "financiamento", tem_troca: "nao", entrada: "sim", valor_entrada: "8 mil", cnh: "sim", cpf: "livre", renda: "comprovavel", prestacao: "600 reais", idade: "28" },
       msgs: [["user", "quero uma fazer 250, tenho 8 mil de entrada e cpf limpo"], ["assistant", "Vou passar teu caso pro vendedor agora.\n[LEAD_QUALIFICADO] Nome: Carlos | Interesse: Fazer 250"]] },
     { n: "[T] Juliana Matos", d: 1, st: "qualificado", sc: 71, t: "quente",
-      c: { nome: "Juliana", cidade: "Torres", modelo: "Biz 125", pagamento: "a_vista", tem_troca: "sim", moto_troca: "Pop 110 2017, 31 mil km", cnh: "sim", prazo: "ate_30_dias" },
+      c: { nome: "Juliana", cidade: "Torres", modelo: "Biz 125", pagamento: "a_vista", tem_troca: "sim", moto_troca: "Pop 110 2017, 31 mil km", cnh: "sim" },
       msgs: [["user", "tenho uma Pop 110 2017 e quero trocar numa Biz, pago a diferença à vista"], ["assistant", "A avaliação da Pop é aqui na loja. Vou passar pro vendedor.\n[LEAD_QUALIFICADO] Nome: Juliana | Interesse: Biz 125"]] },
     { n: "[T] Diego Ramos", d: 0, st: "qualificado", sc: 93, t: "quente",
-      c: { nome: "Diego", cidade: "Tramandaí", modelo: "Biz 125", pagamento: "a_vista", tem_troca: "nao", cnh: "sim", prazo: "imediato", observacoes: "Paga em dinheiro, quer fechar hoje." },
+      c: { nome: "Diego", cidade: "Tramandaí", modelo: "Biz 125", pagamento: "a_vista", tem_troca: "nao", cnh: "sim", observacoes: "Paga em dinheiro, quer fechar hoje." },
       msgs: [["user", "tem biz 125? pago à vista em dinheiro, quero fechar hoje"], ["assistant", "Valor e condição quem negocia é o vendedor. Vou passar agora.\n[LEAD_QUALIFICADO] Nome: Diego | Interesse: Biz 125"]] },
     { n: "[T] Paulo Henrique", d: 2, st: "qualificado", sc: 48, t: "morno",
-      c: { nome: "Paulo", cidade: "Torres", modelo: "uma 160 pra trabalhar", pagamento: "indefinido", tem_troca: "nao", cnh: "sim", prazo: "ate_30_dias" },
+      c: { nome: "Paulo", cidade: "Torres", modelo: "uma 160 pra trabalhar", pagamento: "indefinido", tem_troca: "nao", cnh: "sim" },
       msgs: [["user", "queria uma 160 pra trabalhar mas não sei ainda como vou pagar"], ["assistant", "Sem problema. Vou passar pro vendedor te ajudar a montar.\n[LEAD_QUALIFICADO] Nome: Paulo | Interesse: 160 para trabalho"]] },
     { n: "[T] Bruna Teixeira", d: 3, st: "qualificando", sc: 34, t: "frio",
-      c: { nome: "Bruna", cidade: "Arroio do Sal", modelo: "primeira moto, até 12 mil", pagamento: "financiamento", cnh: "tirando", prazo: "ate_30_dias", entrada: "nao", observacoes: "Faz a prova da CNH no mês que vem." },
+      c: { nome: "Bruna", cidade: "Arroio do Sal", modelo: "primeira moto, até 12 mil", pagamento: "financiamento", cnh: "tirando", entrada: "nao", observacoes: "Faz a prova da CNH no mês que vem." },
       msgs: [["user", "vou tirar a cnh mês que vem, queria já ver uma moto até 12 mil"], ["assistant", "Boa! Tu pensa em pagar à vista ou financiar?"], ["user", "financiar, não tenho entrada ainda"]] },
     { n: "[T] Sandro Luiz", d: 9, st: "qualificando", sc: 18, t: "frio",
-      c: { nome: "Sandro", cidade: "Torres", modelo: "qualquer uma até 10 mil", pagamento: "financiamento", cpf: "restrito", cnh: "sim", prazo: "pesquisando", entrada: "nao" },
+      c: { nome: "Sandro", cidade: "Torres", modelo: "qualquer uma até 10 mil", pagamento: "financiamento", cpf: "restrito", cnh: "sim", entrada: "nao" },
       msgs: [["user", "vcs financiam pra negativado?"], ["assistant", "Tem caminho sim. Qual moto tu tá de olho?"], ["user", "ainda tô só pesquisando, vou ver se limpo o nome primeiro"]] },
     { n: "[T] Elaine Cardoso", d: 14, st: "qualificando", sc: 22, t: "frio",
-      c: { nome: "Elaine", cidade: "Capivari do Sul", modelo: "uma scooter", pagamento: "financiamento", entrada: "nao", cnh: "sim", prazo: "pesquisando", renda: "sem_comprovante" },
+      c: { nome: "Elaine", cidade: "Capivari do Sul", modelo: "uma scooter", pagamento: "financiamento", entrada: "nao", cnh: "sim", renda: "sem_comprovante" },
       msgs: [["user", "queria uma scooter mas não tenho nada de entrada agora"], ["assistant", "Tranquilo, dá pra tentar. Tu consegue comprovar renda?"], ["user", "trabalho por conta, recebo em dinheiro"]] },
     { n: "[T] Gustavo Reis", d: 21, st: "qualificando", sc: 27, t: "frio",
-      c: { nome: "Gustavo", cidade: "Três Cachoeiras", modelo: "uma trail usada", pagamento: "financiamento", cnh: "sim", prazo: "pesquisando", entrada: "sim", valor_entrada: "3 mil" },
+      c: { nome: "Gustavo", cidade: "Três Cachoeiras", modelo: "uma trail usada", pagamento: "financiamento", cnh: "sim", entrada: "sim", valor_entrada: "3 mil" },
       msgs: [["user", "to pensando em comprar ano que vem, uma trail usada"], ["assistant", "Boa. Quando chegar mais perto é só chamar aqui."]] },
     { n: "[T] Tiago Nunes", d: 11, st: "qualificando", sc: 41, t: "morno",
-      c: { nome: "Tiago", cidade: "Osório", modelo: "Fazer 250", pagamento: "financiamento", cnh: "sim", prazo: "imediato" },
+      c: { nome: "Tiago", cidade: "Osório", modelo: "Fazer 250", pagamento: "financiamento", cnh: "sim" },
       msgs: [["user", "tem fazer 250 aí?"], ["assistant", "Quem confirma estoque é o vendedor. Tu pensa em financiar?"], ["user", "sim, financiar"]] },
     { n: "[T] Vanessa Lima", d: 16, st: null, sc: null, t: null,
       c: {},
       msgs: [["user", "oi"], ["assistant", "Oi! Sou a Dani, da Protásio Motos. Como posso te chamar?"]] },
     { n: "[T] Ana Beatriz", d: 1, st: "qualificando", sc: 45, t: "morno",
-      c: { nome: "Ana", cidade: "Torres", modelo: "CG 160", pagamento: "financiamento", cnh: "sim", prazo: "imediato", entrada: "sim", valor_entrada: "4 mil" },
+      c: { nome: "Ana", cidade: "Torres", modelo: "CG 160", pagamento: "financiamento", cnh: "sim", entrada: "sim", valor_entrada: "4 mil" },
       msgs: [["user", "queria uma CG 160, tenho 4 mil de entrada"], ["assistant", "Boa. O teu CPF está livre pra consulta?"]] },
   ];
   try {
@@ -3649,6 +3719,60 @@ cron.schedule("0 8 * * *", async () => {
 }, { timezone: "America/Sao_Paulo" });
 
 initDb().then(() => {
+  // ─────────────────────────────────────────────────────────────────────────
+  // COBRANÇA DE LEAD PARADO
+  // Ordenar a tela coloca o lead quente no topo, mas não garante que alguém
+  // olhe a tela. O que garante é o lead vir atrás da pessoa: passado do tempo
+  // aceitável pra temperatura dele, o grupo recebe uma mensagem. Só roda se o
+  // cliente definir esperaMaxima — sem teto declarado não existe atraso.
+  if (AGENT_CONFIG.esperaMaxima && NOTIFICACOES.grupo_empresa) {
+    const TETOS = AGENT_CONFIG.esperaMaxima;
+    // Railway expõe o domínio público nesta env; sem ela o link sai relativo e
+    // a pessoa ainda acha a fila pelo painel que já usa.
+    const PAINEL_URL = process.env.PAINEL_URL ||
+      (process.env.RAILWAY_PUBLIC_DOMAIN ? "https://" + process.env.RAILWAY_PUBLIC_DOMAIN : "");
+
+    async function cobrarLeadsParados() {
+      try {
+        const r = await db.query(
+          `SELECT phone, nome, temperatura, score, passado_em,
+                  EXTRACT(EPOCH FROM (NOW() - passado_em)) / 60 AS min_espera
+             FROM leads
+            WHERE passado_em IS NOT NULL
+              AND assumido_por IS NULL
+              AND escalado_em IS NULL
+            ORDER BY passado_em ASC LIMIT 20`);
+
+        for (const l of r.rows) {
+          const teto = TETOS[l.temperatura || "sem_dados"] ?? TETOS.sem_dados;
+          if (teto == null || Number(l.min_espera) < teto) continue;
+
+          const min   = Math.round(Number(l.min_espera));
+          const tempo = min < 60 ? `${min} minutos` : `${Math.floor(min / 60)}h${String(min % 60).padStart(2, "0")}`;
+          const quem  = l.nome || l.phone;
+
+          await notificarResponsavel(
+            `Lead ${(l.temperatura || "sem triagem").toUpperCase()} esperando ${tempo}`,
+            `${quem} (${l.phone})\n` +
+            `Nota: ${l.score ?? "–"}/100\n` +
+            `Passado para atendimento humano há ${tempo} e ninguém assumiu.\n\n` +
+            `Fila: ${PAINEL_URL}/fila`
+          );
+          // Marca mesmo se a notificação falhar lá dentro: notificarResponsavel
+          // não propaga erro, e preferimos deixar de cobrar uma vez a inundar
+          // o grupo com o mesmo lead a cada rodada.
+          await db.query(`UPDATE leads SET escalado_em = NOW() WHERE phone = $1`, [l.phone]);
+          console.log(`[ESCALADO] ${l.phone} esperou ${min}min (teto ${teto})`);
+        }
+      } catch (err) {
+        console.error("Erro ao cobrar leads parados:", err.message);
+      }
+    }
+
+    setInterval(cobrarLeadsParados, 5 * 60 * 1000);
+    console.log("Cobrança de lead parado ativa. Tetos (min):", JSON.stringify(TETOS));
+  }
+
   app.listen(PORT, () => console.log("Agente " + AGENT_CONFIG.name + " da " + AGENT_CONFIG.company + " rodando na porta " + PORT));
 }).catch(err => {
   console.error("Erro ao conectar ao banco:", err.message);
