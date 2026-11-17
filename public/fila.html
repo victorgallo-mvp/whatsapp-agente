@@ -158,6 +158,28 @@
   .btn-conv { background: var(--white); color: var(--dark2); border: 1px solid var(--border); }
   .btn-conv:hover { background: var(--surface); }
 
+  /* ─── GRUPOS POR PENDENCIA ───────────── */
+  /* A ordem dos grupos E a ordem de atendimento. O rotulo e a contagem vem do
+     config do cliente (qualificacao.baldes), nao estao fixos aqui. */
+  .grupo { margin-bottom: 20px; }
+  .grupo-head { display: flex; align-items: baseline; gap: 9px; margin: 0 0 8px 2px; }
+  .grupo-titulo { font-size: 13px; font-weight: 800; letter-spacing: .3px; text-transform: uppercase; }
+  .grupo-sub { font-size: 11.5px; color: var(--muted2); }
+  .grupo-n { font-size: 11px; font-weight: 800; padding: 1px 8px; border-radius: 999px; background: var(--border); color: var(--dark2); }
+  .grupo.vermelho .grupo-titulo { color: var(--red); }      .grupo.vermelho .grupo-n { background: var(--red-lt);   color: var(--red); }
+  .grupo.ambar    .grupo-titulo { color: var(--amber); }    .grupo.ambar    .grupo-n { background: var(--amber-lt); color: var(--amber); }
+  .grupo.verde    .grupo-titulo { color: var(--quente); }   .grupo.verde    .grupo-n { background: var(--quente-lt);color: var(--quente); }
+  .grupo.azul     .grupo-titulo { color: var(--blue); }     .grupo.azul     .grupo-n { background: var(--blue-lt);  color: var(--blue); }
+  .grupo.cinza    .grupo-titulo { color: var(--muted); }
+
+  /* O que o vendedor tem que FAZER, dentro do cartao. Vem antes dos campos
+     porque e a razao do lead estar nessa fila. */
+  .acao-box { margin-top: 8px; padding: 7px 10px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); }
+  .acao-box b { display: block; font-size: 10px; font-weight: 800; letter-spacing: .4px; text-transform: uppercase; color: var(--muted); margin-bottom: 3px; }
+  .acao-box ul { margin: 0; padding-left: 15px; }
+  .acao-box li { font-size: 12.5px; line-height: 1.5; }
+  .lead.urgente { border-left-color: var(--red) !important; background: var(--red-lt); }
+
   .vazio { padding: 40px 12px; text-align: center; color: var(--muted2); font-size: 13px; }
   .aviso {
     background: var(--amber-lt); border: 1px solid #FCD34D; color: var(--amber);
@@ -189,6 +211,7 @@
   </div>
   <div class="header-links">
     <a href="/dashboard">Conversas</a>
+    <a href="/followup">Follow-up</a>
     <span id="conn-status" class="disconnected">Conectando...</span>
   </div>
 </header>
@@ -199,19 +222,15 @@
     As conversas continuam no <a href="/dashboard">painel</a>.
   </div>
 
-  <div class="tiles" id="tiles">
-    <div class="tile quente"    onclick="setFiltro('quente')"><div class="n" id="n-quente">–</div><div class="l">Quentes</div><div class="s">prontos para o vendedor</div></div>
-    <div class="tile morno"     onclick="setFiltro('morno')"><div class="n" id="n-morno">–</div><div class="l">Mornos</div><div class="s">falta pouco</div></div>
-    <div class="tile frio"      onclick="setFiltro('frio')"><div class="n" id="n-frio">–</div><div class="l">Frios</div><div class="s">pesquisando ou travado</div></div>
-    <div class="tile sem_dados" onclick="setFiltro('sem_dados')"><div class="n" id="n-sem_dados">–</div><div class="l">Sem triagem</div><div class="s">conversa curta ainda</div></div>
-  </div>
+  <!-- Um bloco por pendencia, montado em runtime a partir de qualificacao.baldes -->
+  <div class="tiles" id="tiles"></div>
 
   <div class="toolbar">
     <input type="text" id="busca" placeholder="Buscar por nome, telefone, moto ou cidade...">
     <button class="chip ativo" data-f="todos" onclick="setFiltro('todos')">Todos</button>
     <button class="chip" data-f="aguardando" onclick="setFiltro('aguardando')">Aguardando vendedor</button>
     <button class="chip" data-f="hoje" onclick="setFiltro('hoje')">Hoje</button>
-    <span class="hint">Ordem: temperatura, depois nota, depois quem falou por último.</span>
+    <span class="hint">Grupos por pendência, na ordem de atendimento. Dentro de cada um, por nota.</span>
   </div>
 
   <div class="lista" id="lista"><div class="vazio">Carregando...</div></div>
@@ -220,8 +239,8 @@
 <script>
   let leads = [];
   let filtro = "todos";
-  let CONFIG = { ativa: false, campos: [], valores: {} };
-  let AGENTE = "a IA";
+  let CONFIG = { ativa: false, campos: [], valores: {}, baldes: [], followup: [] };
+  let AGENTE = "o agente de IA";
   let pollFallback = null;
 
   const ORDEM_TEMP = { quente: 0, morno: 1, frio: 2, sem_dados: 3 };
@@ -255,12 +274,17 @@
     return d.startsWith("55") ? d : "55" + d;
   }
   function tempDe(l) { return l.temperatura || "sem_dados"; }
+  // A pendencia vem decidida do servidor (qualificacao.pendencia no config do
+  // cliente). A tela nao recalcula: duas reguas divergentes seria pior que
+  // nenhuma, e o vendedor nao saberia em qual acreditar.
+  function pendDe(l) { return l.pendencia || { balde: "sem_dados", urgencia: 99, titulo: "Sem triagem", acoes: [] }; }
+  function baldeDe(k) { return (CONFIG.baldes || []).find(b => b.key === k) || { key: k, titulo: k, cor: "cinza", sub: "" }; }
   function aguardando(l) { return l.stage === "qualificado" && l.olivia_ativa === false; }
 
   function setFiltro(f) {
     filtro = (filtro === f && f !== "todos") ? "todos" : f;
     document.querySelectorAll(".chip").forEach(c => c.classList.toggle("ativo", c.dataset.f === filtro));
-    document.querySelectorAll(".tile").forEach(t => t.classList.toggle("ativo", t.classList.contains(filtro)));
+    // Os tiles são remontados por renderTiles(), que já marca o ativo.
     render();
   }
 
@@ -288,12 +312,19 @@
       ? `<div class="falta"><b>Falta perguntar:</b> ${escHtml(q.faltando.join(", "))}</div>` : "";
     const obsHtml = campos.observacoes ? `<div class="obs">${escHtml(campos.observacoes)}</div>` : "";
 
+    // O que fazer com este lead, nas palavras da regua. E a razao de ele estar
+    // nesta fila, entao vem antes dos campos.
+    const p = pendDe(l);
+    const acaoHtml = (p.acoes || []).length
+      ? `<div class="acao-box"><b>${escHtml(p.titulo)}</b><ul>${p.acoes.map(a => `<li>${escHtml(a)}</li>`).join("")}</ul></div>`
+      : "";
+
     const estado = esperando
       ? `<span class="estado">Aguardando vendedor</span>`
       : l.olivia_ativa === false ? `<span class="estado">Com atendente</span>`
       : `<span class="estado ia">${escHtml(AGENTE)} atendendo</span>`;
 
-    return `<div class="lead ${temp} ${esperando ? "aguardando" : ""}">
+    return `<div class="lead ${temp} ${esperando ? "aguardando" : ""} ${p.balde === "suporte" ? "urgente" : ""}">
       <div class="nota">
         <span class="temp ${temp}">${ROTULO_TEMP[temp]}</span>
         <div class="score">${score === null ? "–" : score}<small>/100</small></div>
@@ -306,6 +337,7 @@
           <span class="tempo">${timeAgo(l.last_interaction_at)}</span>
           ${estado}
         </div>
+        ${acaoHtml}
         ${(campos.modelo || camposHtml) ? `<div class="campos">${campos.modelo ? `<span class="campo"><b>Moto</b>${escHtml(campos.modelo)}</span>` : ""}${camposHtml}</div>` : ""}
         ${motivosHtml ? `<div class="motivos">${motivosHtml}</div>` : ""}
         ${faltaHtml}
@@ -318,15 +350,27 @@
     </div>`;
   }
 
+  function renderTiles() {
+    const porBalde = {};
+    for (const l of leads) { const b = pendDe(l).balde; porBalde[b] = (porBalde[b] || 0) + 1; }
+    const el = document.getElementById("tiles");
+    el.innerHTML = (CONFIG.baldes || []).map(b => `
+      <div class="tile ${b.cor} ${filtro === b.key ? "ativo" : ""}" onclick="setFiltro('${b.key}')">
+        <div class="n">${porBalde[b.key] || 0}</div>
+        <div class="l">${escHtml(b.titulo)}</div>
+        <div class="s">${escHtml(b.sub || "")}</div>
+      </div>`).join("");
+  }
+
   function render() {
     const q = document.getElementById("busca").value.toLowerCase().trim();
-    const total = { quente: 0, morno: 0, frio: 0, sem_dados: 0 };
-    for (const l of leads) total[tempDe(l)]++;
-    for (const k of Object.keys(total)) document.getElementById("n-" + k).textContent = total[k];
+    renderTiles();
 
+    const chaves = new Set((CONFIG.baldes || []).map(b => b.key));
     let itens = leads.filter(l => {
       if (filtro === "aguardando") return aguardando(l);
       if (filtro === "hoje")       return ehHoje(l.last_interaction_at);
+      if (chaves.has(filtro))      return pendDe(l).balde === filtro;
       if (filtro !== "todos")      return tempDe(l) === filtro;
       return true;
     });
@@ -336,14 +380,31 @@
         return [l.nome, l.phone, c.nome, c.modelo, c.cidade, c.moto_troca].some(v => (v || "").toLowerCase().includes(q));
       });
     }
+    // Urgencia da pendencia primeiro (= ordem de atendimento), nota depois,
+    // e quem falou por ultimo como desempate.
     itens.sort((a, b) =>
-      (ORDEM_TEMP[tempDe(a)] - ORDEM_TEMP[tempDe(b)]) ||
+      (pendDe(a).urgencia - pendDe(b).urgencia) ||
       ((b.score ?? -1) - (a.score ?? -1)) ||
       (new Date(b.last_interaction_at || 0) - new Date(a.last_interaction_at || 0))
     );
 
     const el = document.getElementById("lista");
-    el.innerHTML = itens.length ? itens.map(cardHtml).join("") : `<div class="vazio">Nenhum lead neste filtro.</div>`;
+    if (!itens.length) { el.innerHTML = `<div class="vazio">Nenhum lead neste filtro.</div>`; return; }
+
+    // Um bloco por pendencia, na ordem do config. Quando o filtro ja e um
+    // balde, nao faz sentido repetir o cabecalho do grupo.
+    if (chaves.has(filtro)) { el.innerHTML = itens.map(cardHtml).join(""); return; }
+    const porBalde = {};
+    for (const l of itens) { const k = pendDe(l).balde; (porBalde[k] = porBalde[k] || []).push(l); }
+    el.innerHTML = (CONFIG.baldes || []).filter(b => porBalde[b.key]?.length).map(b => `
+      <div class="grupo ${b.cor}">
+        <div class="grupo-head">
+          <span class="grupo-titulo">${escHtml(b.titulo)}</span>
+          <span class="grupo-n">${porBalde[b.key].length}</span>
+          <span class="grupo-sub">${escHtml(b.sub || "")}</span>
+        </div>
+        <div class="lista">${porBalde[b.key].map(cardHtml).join("")}</div>
+      </div>`).join("");
   }
 
   async function fetchLeads() {

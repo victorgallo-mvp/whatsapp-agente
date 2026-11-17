@@ -516,5 +516,107 @@ Você não diz taxa de juros, não calcula parcela e não diz que o crédito apr
       const temperatura = conhecidos < 2 ? "sem_dados" : score >= 65 ? "quente" : score >= 35 ? "morno" : "frio";
       return { score, temperatura, motivos, faltando };
     },
+
+    // POR QUE o lead está na fila e com que urgência. Determinística como a
+    // nota, pelo mesmo motivo: dois leads iguais têm que cair no mesmo balde,
+    // e o vendedor precisa ver o porquê sem abrir a conversa.
+    //
+    // A nota diz QUALIDADE do lead; a pendência diz O QUE FAZER. São coisas
+    // diferentes e a fila precisa das duas: um lead quente esperando simulação
+    // e um lead quente com reclamação pedem ações opostas.
+    //
+    // A ordem dos baldes é a ordem de atendimento. Mexer aqui reordena a fila
+    // de todo mundo, então mude por decisão da loja, não por caso isolado.
+    pendencia(c = {}, lead = {}) {
+      const financia = c.pagamento === "financiamento";
+      const aVista   = c.pagamento === "a_vista";
+      const troca    = c.tem_troca === "sim";
+      const passou   = lead.stage === "qualificado";
+      const temFicha = lead.score !== null && lead.score !== undefined;
+
+      // 1. Reclamação, pós-venda, assunto que a Dani não resolve. Vem antes de
+      // tudo: lead esperando é lead parado, reclamação esperando é cliente
+      // perdido e reputação queimada.
+      if (lead.stage === "suporte") {
+        return { balde: "suporte", urgencia: 1, titulo: "Precisa de gente agora",
+                 acoes: ["Reclamação, pós-venda ou assunto fora do alcance da IA"] };
+      }
+
+      // 2. Não é agora. Sai da frente de quem está comprando, mas não se perde:
+      // é exatamente esta gente que a aba de follow-up existe para resgatar.
+      if (c.prazo === "pesquisando" || (c.cnh === "tirando" && c.prazo !== "imediato")) {
+        const motivo = [];
+        if (c.cnh === "tirando")          motivo.push("Está tirando a CNH");
+        if (c.prazo === "pesquisando")    motivo.push("Ainda pesquisando");
+        if (c.cpf === "restrito")         motivo.push("CPF restrito, pode voltar depois de regularizar");
+        return { balde: "followup", urgencia: 6, titulo: "Follow-up depois",
+                 acoes: motivo.length ? motivo : ["Sem previsão de compra"] };
+      }
+
+      if (passou) {
+        const acoes = [];
+        if (troca)    acoes.push("Avaliar a moto da troca" + (c.moto_troca ? ` (${c.moto_troca})` : ""));
+        if (financia) acoes.push("Rodar a simulação no banco" + (c.entrada === "sim" && c.valor_entrada ? ` (entrada ${c.valor_entrada})` : ""));
+        if (aVista)   acoes.push("Negociar o valor à vista");
+
+        // Financiamento primeiro porque depende de banco e de horário bancário:
+        // é o que trava se ficar para depois. A avaliação da moto depende só da
+        // loja e some junto na mesma visita.
+        if (financia) return { balde: "simulacao",  urgencia: 2, titulo: "Esperando simulação de crédito", acoes };
+        if (troca)    return { balde: "avaliacao",  urgencia: 3, titulo: "Esperando avaliação da moto",    acoes };
+        if (aVista)   return { balde: "negociacao", urgencia: 4, titulo: "Esperando negociação",            acoes };
+        return { balde: "vendedor", urgencia: 5, titulo: "Com o vendedor",
+                 acoes: ["Forma de pagamento não ficou definida na triagem"] };
+      }
+
+      // 3. Ainda com a IA. O vendedor pode assumir, mas não precisa.
+      if (temFicha) {
+        return { balde: "triagem", urgencia: 7, titulo: "Em triagem",
+                 acoes: ["A IA ainda está levantando os dados"] };
+      }
+      return { balde: "sem_dados", urgencia: 8, titulo: "Sem triagem",
+               acoes: ["Conversa curta demais para classificar"] };
+    },
+
+    // Rótulo e ordem dos baldes para as telas. A chave é o `balde` devolvido
+    // acima; a ordem deste array é a ordem em que a fila mostra os grupos.
+    baldes: [
+      { key: "suporte",    titulo: "Precisa de gente agora",   cor: "vermelho", sub: "reclamação ou pós-venda" },
+      { key: "simulacao",  titulo: "Simulação de crédito",     cor: "ambar",    sub: "depende do banco" },
+      { key: "avaliacao",  titulo: "Avaliação de moto",        cor: "ambar",    sub: "a moto precisa vir à loja" },
+      { key: "negociacao", titulo: "Negociação à vista",       cor: "verde",    sub: "fecha mais rápido" },
+      { key: "vendedor",   titulo: "Com o vendedor",           cor: "verde",    sub: "sem forma de pagamento definida" },
+      { key: "followup",   titulo: "Follow-up depois",         cor: "azul",     sub: "não é agora" },
+      { key: "triagem",    titulo: "Em triagem",               cor: "cinza",    sub: "a IA ainda está levantando" },
+      { key: "sem_dados",  titulo: "Sem triagem",              cor: "cinza",    sub: "conversa curta" },
+    ],
+
+    // Quem aparece na aba de follow-up. Não é só o balde "followup": "sumiu no
+    // meio" é gente que estava EM TRIAGEM e parou de responder, e esse é o
+    // lead que mais se perde — ninguém o procura porque ele não declarou nada.
+    followupElegivel(c = {}, lead = {}, pend = {}) {
+      if (pend.balde === "followup") return true;
+      if (!["triagem", "sem_dados"].includes(pend.balde)) return false;
+      if (!lead.last_interaction_at) return false;
+      const dias = (Date.now() - new Date(lead.last_interaction_at)) / 86400000;
+      return dias >= 7;
+    },
+
+    // Agrupamento da aba: o MOTIVO de voltar a falar. Primeiro que casar vence,
+    // então a ordem importa — e ela vai do motivo mais concreto (tem data,
+    // "quando a CNH sair") para o mais vago ("sumiu"), porque é essa a ordem em
+    // que vale a pena gastar uma ligação.
+    followup: [
+      { key: "cnh",         titulo: "Tirando a CNH",     quando: c => c.cnh === "tirando",
+        sub: "voltar quando a habilitação sair" },
+      { key: "cpf",         titulo: "CPF restrito",      quando: c => c.cpf === "restrito",
+        sub: "voltar quando regularizar o nome" },
+      { key: "sem_entrada", titulo: "Sem entrada",       quando: c => c.entrada === "nao" && c.pagamento === "financiamento",
+        sub: "voltar quando juntar a entrada" },
+      { key: "pesquisando", titulo: "Ainda pesquisando", quando: c => c.prazo === "pesquisando",
+        sub: "sem previsão declarada" },
+      { key: "sumiu",       titulo: "Sumiu no meio",     quando: () => true,
+        sub: "conversou, parou de responder e não disse por quê" },
+    ],
   },
 };
