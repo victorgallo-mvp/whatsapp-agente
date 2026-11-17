@@ -376,6 +376,7 @@
     <span class="brand-sub" data-agente="Painel · {AGENTE}">Painel · Olivia</span>
   </div>
   <a class="header-link" id="fila-link" href="/fila" style="display:none">Fila de leads</a>
+  <a class="header-link" id="followup-link" href="/followup" style="display:none">Follow-up</a>
   <span id="conn-status" class="disconnected">Conectando...</span>
 </header>
 
@@ -739,6 +740,14 @@
   }
 
   // ─── RENDER KANBAN ────────────────────────────────────────────
+  // Dentro de cada coluna, a nota mais alta vem no topo. Para agente SEM
+  // triagem a nota é null em todo mundo, então o critério cai direto na
+  // recência e a ordem fica igual à de antes — não precisa de flag por cliente.
+  function ordemLead(a, b) {
+    return ((b.score ?? -1) - (a.score ?? -1)) ||
+           (new Date(b.last_interaction_at || 0) - new Date(a.last_interaction_at || 0));
+  }
+
   function renderKanban() {
     const q = document.getElementById("search").value.toLowerCase();
     const filtered = leads.filter(l =>
@@ -749,6 +758,7 @@
     );
 
     const buckets = { novo: [], em_atendimento: [], orcamento: [], visita: [] };
+    filtered.sort(ordemLead);
     for (const l of filtered) {
       const col = leadColumns[l.phone] || "novo";
       buckets[col].push(l);
@@ -895,7 +905,7 @@
           lead.ultima_mensagem     = data.content;
           lead.ultima_role         = data.role;
           lead.last_interaction_at = data.created_at;
-          leads.sort((a,b) => new Date(b.last_interaction_at||0) - new Date(a.last_interaction_at||0));
+          leads.sort(ordemLead);
 
           // Move a coluna pela tag que veio na mensagem, sem recarregar a página.
           const content = data.content || "";
@@ -1057,6 +1067,7 @@
       if (agent) AGENTE = agent;
       if (qualificacao) {
         document.getElementById("fila-link").style.display = "";
+        document.getElementById("followup-link").style.display = "";
         fetch("/api/qualificacao").then(x => x.json()).then(q => { QUALIF = q; }).catch(() => {});
       }
       if (company) {

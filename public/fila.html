@@ -63,22 +63,6 @@
   main { flex: 1; width: 100%; max-width: 1180px; margin: 0 auto; padding: 18px 24px 40px; }
 
   /* ─── TOTAIS ─────────────────────────── */
-  .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
-  .tile {
-    background: var(--white); border: 1px solid var(--border); border-radius: 11px;
-    padding: 12px 14px; cursor: pointer; border-left: 4px solid var(--border);
-    transition: box-shadow .12s, border-color .12s;
-  }
-  .tile:hover { box-shadow: 0 2px 8px rgba(0,0,0,.08); }
-  .tile.ativo { box-shadow: 0 0 0 2px rgba(4,216,26,.25); border-color: var(--cyan); }
-  .tile .n { font-size: 26px; font-weight: 800; line-height: 1.1; }
-  .tile .l { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); margin-top: 3px; }
-  .tile .s { font-size: 11px; color: var(--muted2); margin-top: 2px; }
-  .tile.quente   { border-left-color: var(--quente-bd); }   .tile.quente .n   { color: var(--quente); }
-  .tile.morno    { border-left-color: var(--morno-bd); }    .tile.morno .n    { color: var(--morno); }
-  .tile.frio     { border-left-color: var(--frio-bd); }     .tile.frio .n     { color: var(--frio); }
-  .tile.sem_dados{ border-left-color: var(--semdados-bd); } .tile.sem_dados .n{ color: var(--semdados); }
-
   /* ─── TOOLBAR ────────────────────────── */
   .toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
   .toolbar input {
@@ -116,7 +100,7 @@
   .temp.morno     { background: var(--morno-lt);    color: var(--morno);    border-color: var(--morno-bd); }
   .temp.frio      { background: var(--frio-lt);     color: var(--frio);     border-color: var(--frio-bd); }
   .temp.sem_dados { background: var(--semdados-lt); color: var(--semdados); border-color: var(--semdados-bd); }
-  .score { font-size: 22px; font-weight: 800; line-height: 1; }
+  .score { font-size: 30px; font-weight: 800; line-height: .95; }
   .score small { font-size: 11px; font-weight: 600; color: var(--muted2); }
   .barra { width: 76px; height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; }
   .barra i { display: block; height: 100%; background: var(--dark2); border-radius: 2px; }
@@ -126,6 +110,9 @@
 
   .quem { min-width: 0; }
   .quem-top { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  /* A moto é o que o vendedor procura primeiro no cartão, então sai da lista
+     de campos e ganha linha própria. */
+  .moto { font-size: 13.5px; font-weight: 600; margin-top: 5px; }
   .nome { font-size: 14px; font-weight: 700; }
   .fone { font-size: 12px; color: var(--muted); }
   .tempo { font-size: 11px; color: var(--muted2); }
@@ -157,6 +144,32 @@
   .btn-wpp:hover { background: var(--cyan-dk); }
   .btn-conv { background: var(--white); color: var(--dark2); border: 1px solid var(--border); }
   .btn-conv:hover { background: var(--surface); }
+
+  /* ─── FILTROS COMO PILLS ─────────────── */
+  /* Eram 8 tiles grandes, que ocupavam meia tela antes do primeiro lead. Como
+     os grupos ja aparecem na lista com titulo e contagem, o tile grande
+     repetia a informacao duas vezes. Virou uma fileira de pills: mesma
+     contagem, mesmo clique pra filtrar, um quinto da altura. */
+  .pills { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--white); border: 1px solid var(--border); color: var(--dark2);
+    border-radius: 999px; padding: 5px 12px 5px 6px; font-size: 12px; font-weight: 600;
+    cursor: pointer; font-family: inherit;
+  }
+  .pill:hover { border-color: var(--muted2); }
+  .pill.ativo { background: var(--dark); color: #fff; border-color: var(--dark); }
+  .pill-n {
+    min-width: 20px; text-align: center; font-weight: 800; font-size: 11px;
+    padding: 1px 5px; border-radius: 999px; background: var(--surface); color: var(--dark2);
+  }
+  .pill.ativo .pill-n { background: rgba(255,255,255,.2); color: #fff; }
+  .pill.vermelho .pill-n { background: var(--red-lt);    color: var(--red); }
+  .pill.ambar    .pill-n { background: var(--amber-lt);  color: var(--amber); }
+  .pill.verde    .pill-n { background: var(--quente-lt); color: var(--quente); }
+  .pill.azul     .pill-n { background: var(--blue-lt);   color: var(--blue); }
+  .pill.ativo.vermelho .pill-n, .pill.ativo.ambar .pill-n,
+  .pill.ativo.verde .pill-n, .pill.ativo.azul .pill-n { background: rgba(255,255,255,.2); color: #fff; }
 
   /* ─── GRUPOS POR PENDENCIA ───────────── */
   /* A ordem dos grupos E a ordem de atendimento. O rotulo e a contagem vem do
@@ -191,8 +204,6 @@
     header { padding: 0 14px; }
     .header-links a { padding: 5px 8px; font-size: 11px; }
     main { padding: 12px 12px 32px; }
-    .tiles { grid-template-columns: repeat(2, 1fr); gap: 8px; }
-    .tile .n { font-size: 22px; }
     .toolbar input { max-width: none; font-size: 16px; }
     .toolbar .hint { display: none; }
     .lead { grid-template-columns: 1fr; }
@@ -223,7 +234,7 @@
   </div>
 
   <!-- Um bloco por pendencia, montado em runtime a partir de qualificacao.baldes -->
-  <div class="tiles" id="tiles"></div>
+  <div class="pills" id="tiles"></div>
 
   <div class="toolbar">
     <input type="text" id="busca" placeholder="Buscar por nome, telefone, moto ou cidade...">
@@ -248,6 +259,10 @@
   // Campos que aparecem na linha do lead, nesta ordem. "nome", "cidade" e
   // "observacoes" têm lugar próprio no cartão. O que o cliente não declarou
   // nos rótulos cai no nome da chave.
+  // Os fatos que decidem a venda, nesta ordem. Era "todos os campos menos
+  // alguns ocultos", o que enchia o cartao com 9 ou 10 itens e escondia o que
+  // importa. Troca e entrada saem daqui porque a caixa de acao ja as nomeia.
+  const FATOS = ["pagamento", "prazo", "cnh", "cpf", "renda"];
   const OCULTOS = new Set(["nome", "observacoes", "interesse", "modelo"]);
   // Valores que merecem destaque de alerta pro vendedor.
   const NEGATIVOS = new Set(["restrito", "nao", "pesquisando"]);
@@ -277,7 +292,7 @@
   // A pendencia vem decidida do servidor (qualificacao.pendencia no config do
   // cliente). A tela nao recalcula: duas reguas divergentes seria pior que
   // nenhuma, e o vendedor nao saberia em qual acreditar.
-  function pendDe(l) { return l.pendencia || { balde: "sem_dados", urgencia: 99, titulo: "Sem triagem", acoes: [] }; }
+  function pendDe(l) { return l.pendencia || { balde: "sem_dados", urgencia: 8, titulo: "Sem triagem", acoes: [] }; }
   function baldeDe(k) { return (CONFIG.baldes || []).find(b => b.key === k) || { key: k, titulo: k, cor: "cinza", sub: "" }; }
   function aguardando(l) { return l.stage === "qualificado" && l.olivia_ativa === false; }
 
@@ -297,20 +312,23 @@
     const cidade = campos.cidade ? ` · ${escHtml(campos.cidade)}` : "";
     const esperando = aguardando(l);
 
-    const camposHtml = CONFIG.campos
-      .filter(c => !OCULTOS.has(c.chave) && campos[c.chave])
-      .map(c => {
-        const bruto = campos[c.chave];
-        const neg   = NEGATIVOS.has(bruto) && c.chave !== "tem_troca";
-        return `<span class="campo ${neg ? "neg" : ""}"><b>${escHtml(c.rotulo)}</b>${escHtml(CONFIG.valores[bruto] || bruto)}</span>`;
+    const camposHtml = FATOS
+      .filter(k => campos[k])
+      .map(k => {
+        const rot   = (CONFIG.campos.find(c => c.chave === k) || {}).rotulo || k;
+        const bruto = campos[k];
+        const neg   = NEGATIVOS.has(bruto);
+        return `<span class="campo ${neg ? "neg" : ""}"><b>${escHtml(rot)}</b>${escHtml(CONFIG.valores[bruto] || bruto)}</span>`;
       }).join("");
 
-    const motivosHtml = (q.motivos || []).map(m =>
-      `<span class="motivo ${/restri|sem (habilita|entrada)|pesquisando/i.test(m) ? "alerta" : ""}">${escHtml(m)}</span>`
-    ).join("");
-    const faltaHtml = (q.faltando || []).length
+    // "Falta perguntar" só aparece em quem ainda está em triagem: nos baldes de
+    // ação o que fazer já está na caixa de ação, e repetir o que falta ali vira
+    // ruído. Os "motivos" da nota saíram do cartão por duplicarem os fatos.
+    const emTriagem = ["triagem", "sem_dados"].includes(pendDe(l).balde);
+    const faltaHtml = (emTriagem && (q.faltando || []).length)
       ? `<div class="falta"><b>Falta perguntar:</b> ${escHtml(q.faltando.join(", "))}</div>` : "";
-    const obsHtml = campos.observacoes ? `<div class="obs">${escHtml(campos.observacoes)}</div>` : "";
+    const obsHtml = campos.observacoes
+      ? `<div class="obs">${escHtml(campos.observacoes.length > 170 ? campos.observacoes.slice(0, 170) + "…" : campos.observacoes)}</div>` : "";
 
     // O que fazer com este lead, nas palavras da regua. E a razao de ele estar
     // nesta fila, entao vem antes dos campos.
@@ -326,9 +344,8 @@
 
     return `<div class="lead ${temp} ${esperando ? "aguardando" : ""} ${p.balde === "suporte" ? "urgente" : ""}">
       <div class="nota">
-        <span class="temp ${temp}">${ROTULO_TEMP[temp]}</span>
         <div class="score">${score === null ? "–" : score}<small>/100</small></div>
-        <div class="barra"><i style="width:${score === null ? 0 : score}%"></i></div>
+        <span class="temp ${temp}">${ROTULO_TEMP[temp]}</span>
       </div>
       <div class="quem">
         <div class="quem-top">
@@ -338,8 +355,8 @@
           ${estado}
         </div>
         ${acaoHtml}
-        ${(campos.modelo || camposHtml) ? `<div class="campos">${campos.modelo ? `<span class="campo"><b>Moto</b>${escHtml(campos.modelo)}</span>` : ""}${camposHtml}</div>` : ""}
-        ${motivosHtml ? `<div class="motivos">${motivosHtml}</div>` : ""}
+        ${campos.modelo ? `<div class="moto">${escHtml(campos.modelo)}</div>` : ""}
+        ${camposHtml ? `<div class="campos">${camposHtml}</div>` : ""}
         ${faltaHtml}
         ${obsHtml}
       </div>
@@ -355,11 +372,9 @@
     for (const l of leads) { const b = pendDe(l).balde; porBalde[b] = (porBalde[b] || 0) + 1; }
     const el = document.getElementById("tiles");
     el.innerHTML = (CONFIG.baldes || []).map(b => `
-      <div class="tile ${b.cor} ${filtro === b.key ? "ativo" : ""}" onclick="setFiltro('${b.key}')">
-        <div class="n">${porBalde[b.key] || 0}</div>
-        <div class="l">${escHtml(b.titulo)}</div>
-        <div class="s">${escHtml(b.sub || "")}</div>
-      </div>`).join("");
+      <button class="pill ${b.cor} ${filtro === b.key ? "ativo" : ""}" onclick="setFiltro('${b.key}')" title="${escHtml(b.sub || "")}">
+        <span class="pill-n">${porBalde[b.key] || 0}</span>${escHtml(b.titulo)}
+      </button>`).join("");
   }
 
   function render() {
