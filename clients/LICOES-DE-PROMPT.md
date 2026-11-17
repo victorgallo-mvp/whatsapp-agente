@@ -289,3 +289,78 @@ Vale também para campo opcional: se um dado é bom ter mas não é obrigatório
 diga quantas vezes pedir ("peça uma vez, junto com outra coisa; se não vier,
 deixe passar"). Sem o número, "idealmente" vira insistência.
 
+
+## 20. Proibir a frase não basta: o exemplo é que ensina
+
+A Dani dizia "eu não sei confirmar se a loja aceita, o vendedor te dirá". O
+primeiro conserto foi um bloco inteiro proibindo "não sei", "não consigo
+confirmar", "quem confirma é o vendedor", com o motivo explicado. No teste
+seguinte ela disse **quatro vezes** "estoque e valor quem confirma é o
+vendedor".
+
+A causa estava trinta linhas acima, no exemplo de tom do bloco de estoque:
+
+> "Se tem alguma Fazer 250 agora e o valor da unidade, quem te confirma é o
+> vendedor, porque o estoque gira toda semana."
+
+O modelo copiou o exemplo e ignorou a proibição. **Exemplo vence regra**, e
+isso é o item 12 numa forma mais cruel: não é que falte a regra, é que o texto
+mostra o contrário do que manda. Antes de escrever a proibição, procure a
+frase proibida nos exemplos do próprio prompt.
+
+Três detalhes do conserto que valem para qualquer agente:
+
+**A explicação é o "não sei" disfarçado.** "Quem te passa o valor é o vendedor,
+*porque cada moto tem o seu preço*" não é informação: é uma recusa mais longa.
+Proibir também o motivo ("porque o estoque gira", "porque não tenho acesso ao
+sistema") é o que faz a frase virar curta e própria: "deixa que eu confiro
+isso pra ti" + a próxima pergunta.
+
+**O rabicho reaparece mesmo com resposta pronta.** Com o script "a parcela sai
+da simulação, e é ela que eu vou montar pro vendedor rodar contigo", ela
+escreveu o script e emendou "então não tenho como adiantar esse número aqui".
+O que resolveu foi o par que já tinha funcionado antes: resposta literal +
+**"e PARE nela"** + a frase que escapou, citada.
+
+**Insistência não se responde, se passa.** Na terceira vez que a pessoa pede o
+preço, nenhuma formulação serve — ela não quer entender o motivo, quer o
+número. A regra que funcionou é "segunda pergunta repetida = emite a tag com
+o que já tem", e isso ainda melhora o tempo de resposta do lead quente.
+
+**Cuidado com a proibição largar demais.** O primeiro rascunho baniu "o
+vendedor te manda", que é literalmente o texto de passagem da própria loja
+("ele te manda as fotos e te chama por aqui"). Dizer o que o vendedor vai
+fazer **na hora de passar** é a informação que a pessoa precisa; o proibido é
+usar o vendedor como motivo para não responder. Toda proibição de frase precisa
+dizer onde ela não vale, senão apaga o uso legítimo.
+
+## 21. Regra condicionada ao que o agente nunca fica sabendo não dispara
+
+A loja quer que a Dani ofereça o caminho do familiar quando o financiamento não
+sai no nome do cliente. Escrevi exatamente isso: *"se não tiver jeito no nome
+dela, ofereça o caminho do familiar"*.
+
+No teste, um cliente abriu a conversa dizendo que **já tinha sido negado em
+outra loja** e que estava "sem esperança". A conversa inteira passou e o
+familiar nunca foi mencionado. A regra não falhou por desobediência: a condição
+nunca pode ser observada. A IA passa o lead antes do banco rodar, então ela
+nunca sabe se "não teve jeito".
+
+O conserto foi trocar a condição por três gatilhos que são **palavras do
+cliente**:
+
+- disse que já tentou em outro lugar e foi negada;
+- disse que acha que não vai passar, que não vale a pena tentar;
+- disse que tem restrição e perguntou se tem chance.
+
+Com os gatilhos observáveis, a oferta saiu na primeira resposta. É o mesmo
+princípio do item 2, visto de outro ângulo: **toda condição tem que ser
+verificável dentro da conversa**. Se a regra depende de um fato que chega depois
+(ou nunca chega), ela é decorativa.
+
+Corolário descoberto no mesmo teste: **nunca deixe o agente se corrigir em
+público.** Com a regra nova brigando com uma antiga, saiu ao vivo, para o
+cliente: *"esse perfil ajuda bastante na— Espera, deixa eu me corrigir: o que
+pesa na análise quem diz é o banco"*. Isso é pior que o erro original. Toda
+proibição de frase precisa vir com "ela simplesmente não aparece", senão o
+modelo mostra o conflito em vez de resolvê-lo.
