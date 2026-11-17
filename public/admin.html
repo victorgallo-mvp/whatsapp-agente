@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tudo</title>
+<style>
+  /* Esta tela não é das três operacionais: é para LER. O painel, a fila e o
+     follow-up existem para agir e por isso escondem, agrupam e paginam. Aqui o
+     objetivo é o contrário — nada escondido, nenhum filtro ligado por padrão,
+     a conversa inteira de uma vez. Densidade alta de propósito: quem lê 50
+     conversas seguidas não quer cartão arejado, quer caber mais na tela. */
+  :root {
+    --cyan:#04D81A; --cyan-dk:#03A814; --cyan-lt:#EAFBEC;
+    --dark:#1C1C1E; --dark2:#374151; --surface:#F7F8FA; --border:#E4E7EC;
+    --text:#111827; --muted:#6B7280; --muted2:#9CA3AF; --white:#FFFFFF;
+    --red:#DC2626; --red-lt:#FEF2F2; --amber:#B45309; --amber-lt:#FFF7ED;
+    --blue:#1D4ED8; --blue-lt:#EFF6FF;
+    --quente:#0A7A1C; --quente-lt:#EAFBEC; --morno:#B45309; --morno-lt:#FFF7ED;
+    --frio:#1D4ED8; --frio-lt:#EFF6FF; --semdados:#6B7280; --semdados-lt:#F3F4F6;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--surface); color: var(--text);
+    height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+  }
+  header {
+    background: var(--dark); color: #fff; padding: 0 16px; height: 50px;
+    display: flex; align-items: center; gap: 12px; flex-shrink: 0;
+  }
+  .brand { font-size: 15px; font-weight: 900; letter-spacing: 1.6px; text-transform: uppercase; }
+  .brand .cc { color: var(--cyan); }
+  .sub { font-size: 9px; color: rgba(255,255,255,.4); letter-spacing: 1.1px; text-transform: uppercase; }
+  .links { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+  .links a {
+    color: rgba(255,255,255,.75); text-decoration: none; font-size: 11.5px; font-weight: 600;
+    padding: 4px 9px; border-radius: 6px; border: 1px solid rgba(255,255,255,.14);
+  }
+  .links a:hover { background: rgba(255,255,255,.08); color: #fff; }
+  #st { font-size: 10px; padding: 2px 8px; border-radius: 999px; font-weight: 600; }
+  #st.on  { background: rgba(4,216,26,.15); color: var(--cyan); }
+  #st.off { background: rgba(220,38,38,.15); color: #f87171; }
+
+  .barra {
+    background: var(--white); border-bottom: 1px solid var(--border);
+    padding: 7px 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; flex-shrink: 0;
+  }
+  .barra input {
+    flex: 1; min-width: 200px; max-width: 340px; padding: 6px 10px;
+    border: 1px solid var(--border); border-radius: 7px; font-size: 13px;
+    background: var(--surface); outline: none;
+  }
+  .barra input:focus { border-color: var(--cyan); background: var(--white); }
+  .chip {
+    background: var(--white); border: 1px solid var(--border); color: var(--dark2);
+    border-radius: 999px; padding: 4px 11px; font-size: 11.5px; font-weight: 600;
+    cursor: pointer; font-family: inherit; white-space: nowrap;
+  }
+  .chip.on { background: var(--dark); color: #fff; border-color: var(--dark); }
+  .total { font-size: 11.5px; color: var(--muted2); margin-left: auto; font-variant-numeric: tabular-nums; }
+
+  .corpo { flex: 1; display: flex; min-height: 0; }
+
+  /* ── lista ── */
+  .lista { width: 380px; flex-shrink: 0; overflow-y: auto; border-right: 1px solid var(--border); background: var(--white); }
+  .linha {
+    padding: 8px 11px; border-bottom: 1px solid var(--border); cursor: pointer;
+    border-left: 3px solid transparent; display: flex; flex-direction: column; gap: 2px;
+  }
+  .linha:hover { background: var(--surface); }
+  .linha.sel { background: var(--cyan-lt); border-left-color: var(--cyan); }
+  .linha.quente { border-left-color: #04D81A; }
+  .linha.morno  { border-left-color: #F59E0B; }
+  .linha.frio   { border-left-color: #93C5FD; }
+  .linha.sel.quente, .linha.sel.morno, .linha.sel.frio { border-left-color: var(--cyan); }
+  .l1 { display: flex; align-items: baseline; gap: 7px; }
+  .l-nome { font-size: 13px; font-weight: 700; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .l-nota { font-size: 12px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--dark2); }
+  .l-quando { font-size: 10.5px; color: var(--muted2); white-space: nowrap; }
+  .l2 { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; }
+  .tag {
+    font-size: 9.5px; font-weight: 700; padding: 1px 6px; border-radius: 5px;
+    border: 1px solid transparent; white-space: nowrap;
+  }
+  .tag.fone { background: var(--surface); color: var(--muted); border-color: var(--border); font-weight: 600; }
+  .tag.ia-off { background: var(--red-lt); color: var(--red); border-color: #FECACA; }
+  .tag.anuncio { background: var(--blue-lt); color: var(--blue); border-color: #BFDBFE; }
+  .tag.pend { background: var(--amber-lt); color: var(--amber); border-color: #FCD34D; }
+  .tag.pend.suporte { background: var(--red-lt); color: var(--red); border-color: #FECACA; }
+  .tag.fup { background: var(--frio-lt); color: var(--frio); border-color: #BFDBFE; }
+
+  /* ── conversa ── */
+  .conversa { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--surface); }
+  .ficha {
+    background: var(--white); border-bottom: 1px solid var(--border);
+    padding: 10px 14px; flex-shrink: 0;
+  }
+  .ficha h2 { font-size: 15px; font-weight: 700; margin-bottom: 2px; }
+  .ficha .meta { font-size: 11.5px; color: var(--muted); }
+  .ficha .campos { display: flex; flex-wrap: wrap; gap: 3px 14px; margin-top: 7px; }
+  .ficha .campo { font-size: 12px; }
+  .ficha .campo b { font-weight: 600; color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .3px; margin-right: 3px; }
+  .ficha .resumo { font-size: 12.5px; line-height: 1.5; margin-top: 7px; color: var(--dark2); background: var(--surface); padding: 7px 9px; border-radius: 7px; }
+  .ficha .anuncio { font-size: 12px; line-height: 1.5; margin-top: 7px; color: var(--blue); background: var(--blue-lt); padding: 7px 9px; border-radius: 7px; border: 1px solid #BFDBFE; }
+
+  .msgs { flex: 1; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 7px; }
+  .msg { max-width: 76%; padding: 7px 11px; border-radius: 11px; font-size: 13px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+  .msg .q { display: block; font-size: 9.5px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; opacity: .6; margin-bottom: 2px; }
+  .msg.user { align-self: flex-start; background: var(--white); border: 1px solid var(--border); }
+  .msg.ia   { align-self: flex-end; background: var(--cyan-lt); border: 1px solid #A7F3B0; }
+  /* Mensagem digitada por gente, não pela IA. Precisa ser distinguível de
+     relance: é o que mostra onde o humano assumiu a conversa. */
+  .msg.humano { align-self: flex-end; background: #FEF9E7; border: 1px solid #FCD34D; }
+  .msg .hora { display: block; font-size: 9.5px; color: var(--muted2); margin-top: 3px; }
+  /* A linha de tag aparece crua, de propósito: é o que diz por que a conversa
+     mudou de estado, e esconder atrapalha justamente quem está diagnosticando. */
+  .msg .tagline { display: block; font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; color: var(--muted); margin-top: 4px; padding-top: 4px; border-top: 1px dashed var(--border); white-space: pre-wrap; }
+
+  .vazio { padding: 40px 16px; text-align: center; color: var(--muted2); font-size: 13px; }
+
+  @media (max-width: 900px) {
+    .lista { width: 100%; }
+    .corpo.lendo .lista { display: none; }
+    .corpo:not(.lendo) .conversa { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="brand"><span class="cc">T</span>UDO</div>
+    <div class="sub">leitura e diagnóstico</div>
+  </div>
+  <div class="links">
+    <a href="/dashboard">Conversas</a>
+    <a href="/fila">Fila</a>
+    <a href="/followup">Follow-up</a>
+    <span id="st" class="off">—</span>
+  </div>
+</header>
+
+<div class="barra">
+  <input type="text" id="busca" placeholder="Buscar em nome, telefone, moto, cidade, resumo, anúncio...">
+  <button class="chip on" data-f="todos" onclick="filtrar('todos')">Todos</button>
+  <button class="chip" data-f="anuncio" onclick="filtrar('anuncio')">De anúncio</button>
+  <button class="chip" data-f="humano" onclick="filtrar('humano')">Humano assumiu</button>
+  <button class="chip" data-f="pendente" onclick="filtrar('pendente')">Com pendência</button>
+  <button class="chip" data-f="followup" onclick="filtrar('followup')">Follow-up</button>
+  <span class="total" id="total">—</span>
+</div>
+
+<div class="corpo" id="corpo">
+  <div class="lista" id="lista"><div class="vazio">Carregando...</div></div>
+  <div class="conversa">
+    <div class="ficha" id="ficha"><div class="vazio">Escolha uma conversa para ler.</div></div>
+    <div class="msgs" id="msgs"></div>
+  </div>
+</div>
+
+<script>
+  // Tela de leitura. Puxa TODOS os leads que o servidor entrega (limite no teto)
+  // e não esconde nada: sem coluna, sem balde, sem paginação. As três telas
+  // operacionais filtram pra alguém agir; esta existe pra alguém entender.
+  let leads = [], atual = null, filtro = "todos";
+  let CONFIG = { ativa: false, campos: [], valores: {} };
+
+  const esc = t => String(t ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const rot = k => (CONFIG.campos.find(c => c.chave === k) || {}).rotulo || k;
+  const val = v => CONFIG.valores[v] || v;
+
+  function quando(iso) {
+    if (!iso) return "—";
+    const d = new Date(iso), ms = Date.now() - d;
+    const min = Math.floor(ms / 60000);
+    if (min < 1) return "agora";
+    if (min < 60) return min + "min";
+    const h = Math.floor(min / 60);
+    if (h < 24) return h + "h";
+    const dias = Math.floor(h / 24);
+    if (dias < 30) return dias + "d";
+    return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+  }
+  const hora = iso => new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+
+  function visiveis() {
+    const q = document.getElementById("busca").value.toLowerCase().trim();
+    return leads.filter(l => {
+      const c = (l.qualificacao || {}).campos || {};
+      if (filtro === "anuncio"  && !l.anuncio_origem) return false;
+      if (filtro === "humano"   && l.olivia_ativa !== false) return false;
+      if (filtro === "pendente" && !["suporte","simulacao","avaliacao","negociacao","vendedor"].includes(l.pendencia?.balde)) return false;
+      if (filtro === "followup" && !l.followup_elegivel) return false;
+      if (!q) return true;
+      return [l.nome, l.phone, l.last_summary, l.anuncio_origem, l.stage,
+              c.nome, c.modelo, c.cidade, c.moto_troca, c.observacoes]
+        .some(v => (v || "").toString().toLowerCase().includes(q));
+    });
+  }
+
+  function filtrar(f) {
+    filtro = (filtro === f && f !== "todos") ? "todos" : f;
+    document.querySelectorAll(".chip").forEach(c => c.classList.toggle("on", c.dataset.f === filtro));
+    renderLista();
+  }
+
+  function renderLista() {
+    const itens = visiveis();
+    document.getElementById("total").textContent =
+      itens.length + (itens.length === leads.length ? " conversas" : " de " + leads.length);
+    const el = document.getElementById("lista");
+    if (!itens.length) { el.innerHTML = `<div class="vazio">Nada encontrado.</div>`; return; }
+    el.innerHTML = itens.map(l => {
+      const c = (l.qualificacao || {}).campos || {};
+      const p = l.pendencia;
+      const acao = p && ["suporte","simulacao","avaliacao","negociacao","vendedor"].includes(p.balde)
+        ? `<span class="tag pend ${esc(p.balde)}">${esc(p.titulo)}</span>` : "";
+      return `<div class="linha ${esc(l.temperatura || "")} ${atual === l.phone ? "sel" : ""}" onclick="abrir('${esc(l.phone)}')">
+        <div class="l1">
+          <span class="l-nome">${esc(l.nome || c.nome || l.phone)}</span>
+          ${l.score != null ? `<span class="l-nota">${l.score}</span>` : ""}
+          <span class="l-quando">${esc(quando(l.last_interaction_at))}</span>
+        </div>
+        <div class="l2">
+          <span class="tag fone">${esc(l.phone)}</span>
+          ${c.cidade ? `<span class="tag fone">${esc(c.cidade)}</span>` : ""}
+          ${l.anuncio_origem ? `<span class="tag anuncio">anúncio</span>` : ""}
+          ${l.olivia_ativa === false ? `<span class="tag ia-off">IA off</span>` : ""}
+          ${acao}
+          ${l.followup_elegivel ? `<span class="tag fup">follow-up</span>` : ""}
+        </div>
+      </div>`;
+    }).join("");
+  }
+
+  async function abrir(phone) {
+    atual = phone;
+    document.getElementById("corpo").classList.add("lendo");
+    renderLista();
+    const l = leads.find(x => x.phone === phone) || {};
+    const c = (l.qualificacao || {}).campos || {};
+
+    const camposHtml = CONFIG.campos
+      .filter(x => c[x.chave] && x.chave !== "observacoes")
+      .map(x => `<span class="campo"><b>${esc(x.rotulo)}</b>${esc(val(c[x.chave]))}</span>`).join("");
+
+    document.getElementById("ficha").innerHTML = `
+      <h2>${esc(l.nome || c.nome || phone)}</h2>
+      <div class="meta">${esc(phone)} · ${esc(l.total_interactions || 0)} mensagens ·
+        última ${esc(quando(l.last_interaction_at))} ·
+        ${l.olivia_ativa === false ? "IA desativada" : "IA ativa"}
+        ${l.stage ? " · etapa " + esc(l.stage) : ""}
+        ${l.score != null ? " · nota " + l.score + " (" + esc(l.temperatura || "") + ")" : ""}
+        ${l.pendencia ? " · " + esc(l.pendencia.titulo) : ""}</div>
+      ${camposHtml ? `<div class="campos">${camposHtml}</div>` : ""}
+      ${c.observacoes ? `<div class="resumo">${esc(c.observacoes)}</div>` : ""}
+      ${l.last_summary ? `<div class="resumo"><b>Resumo da IA:</b> ${esc(l.last_summary)}</div>` : ""}
+      ${l.anuncio_origem ? `<div class="anuncio"><b>Veio deste anúncio:</b> ${esc(l.anuncio_origem)}</div>` : ""}`;
+
+    const box = document.getElementById("msgs");
+    box.innerHTML = `<div class="vazio">Carregando conversa...</div>`;
+    try {
+      const r = await fetch(`/api/leads/${encodeURIComponent(phone)}/msgs`);
+      const ms = await r.json();
+      if (!Array.isArray(ms) || !ms.length) { box.innerHTML = `<div class="vazio">Sem mensagens.</div>`; return; }
+      box.innerHTML = ms.map(m => {
+        const humano = /^\[DIRETO\]/.test(m.content || "");
+        const quem = m.role === "user" ? "Cliente" : (humano ? "Atendente (humano)" : "IA");
+        const cls  = m.role === "user" ? "user" : (humano ? "humano" : "ia");
+        // Separa a linha de tag do texto: ela não foi vista pelo cliente, e
+        // misturar as duas coisas faz parecer que a IA mandou o colchete.
+        const txt  = (m.content || "").replace(/^\[DIRETO\]\s*/, "");
+        const tag  = txt.match(/\[[A-Z_]+\][^\n]*/);
+        const corpo = tag ? txt.replace(tag[0], "").trim() : txt;
+        return `<div class="msg ${cls}">
+          <span class="q">${esc(quem)}</span>${esc(corpo)}
+          ${tag ? `<span class="tagline">${esc(tag[0])}</span>` : ""}
+          <span class="hora">${esc(hora(m.created_at))}</span>
+        </div>`;
+      }).join("");
+      box.scrollTop = box.scrollHeight;
+    } catch (e) {
+      box.innerHTML = `<div class="vazio">Erro ao carregar a conversa.</div>`;
+    }
+  }
+
+  async function puxar() {
+    try {
+      const r = await fetch("/api/leads?limit=1000");
+      leads = await r.json();
+      renderLista();
+      if (atual) {
+        const ainda = leads.some(l => l.phone === atual);
+        if (!ainda) atual = null;
+      }
+    } catch (e) { console.error("puxar:", e); }
+  }
+
+  (async () => {
+    try {
+      const [info, cfg] = await Promise.all([
+        fetch("/").then(r => r.json()),
+        fetch("/api/qualificacao").then(r => r.json()).catch(() => ({ ativa: false })),
+      ]);
+      CONFIG = cfg && cfg.ativa ? cfg : { ativa: false, campos: [], valores: {} };
+      if (info.company) {
+        document.title = `${info.company} — Tudo`;
+        document.querySelector(".brand").innerHTML = `<span class="cc">${info.company[0]}</span>${info.company.slice(1).toUpperCase()}`;
+      }
+      document.getElementById("busca").addEventListener("input", renderLista);
+      await puxar();
+      const st = document.getElementById("st");
+      const es = new EventSource("/api/stream");
+      es.onopen  = () => { st.className = "on";  st.textContent = "ao vivo"; };
+      es.onerror = () => { st.className = "off"; st.textContent = "reconectando"; };
+      es.addEventListener("leads_update", puxar);
+    } catch (e) {
+      console.error("init:", e);
+      document.getElementById("lista").innerHTML = `<div class="vazio">Erro ao carregar.</div>`;
+    }
+  })();
+</script>
+</body>
+</html>

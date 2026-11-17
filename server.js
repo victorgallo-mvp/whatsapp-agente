@@ -2873,6 +2873,13 @@ app.get("/fila", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "fila.html"));
 });
 
+// Painel de leitura. Existe separado das três telas operacionais porque o
+// objetivo é oposto: elas escondem, agrupam e paginam pra alguém AGIR; esta
+// não esconde nada, pra alguém ENTENDER. Serve pra ler conversa e diagnosticar.
+app.get("/tudo", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "admin.html"));
+});
+
 // Aba de follow-up: quem não é agora, agrupado pelo motivo de voltar a falar.
 // Só tem conteúdo em agente com qualificação (hoje, Protásio).
 app.get("/followup", (req, res) => {
