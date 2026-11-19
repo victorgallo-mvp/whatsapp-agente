@@ -274,8 +274,9 @@ async function getHistory(userId) {
 
 async function getLead(phone) {
   const res = await db.query(
-    `SELECT nome, empresa, endereco, stage, profile, last_summary, total_interactions, olivia_ativa, anuncio_origem,
-            qualificacao, score, temperatura FROM leads WHERE phone = $1`,
+    `SELECT nome, empresa, endereco, stage, profile, last_summary, total_interactions, olivia_ativa,
+            anuncio_origem, anuncio_id, anuncio_fonte, qualificacao, score, temperatura
+       FROM leads WHERE phone = $1`,
     [phone]
   );
   return res.rows[0] || null;
@@ -1230,7 +1231,15 @@ function extrairAnuncio(data, msg) {
     || null;
   const ad = ci?.externalAdReply;
   if (!ad) return null;
-  const titulo = (ad.title || "").trim();
+  // O título é quase sempre o rótulo do botão do anúncio, não o nome do
+  // anúncio: nas 24 mensagens de tráfego da Sorrix ele veio "Converse conosco"
+  // em TODAS. Como esse texto vai para o prompt, mandá-lo é gastar contexto
+  // dizendo nada e ainda arriscar a IA tratar "Converse conosco" como o
+  // produto anunciado. O conteúdo real está no body.
+  const BOTOES = ["converse conosco", "enviar mensagem", "saiba mais", "fale conosco",
+                  "chamar no whatsapp", "enviar mensagem no whatsapp", "contact us", "send message"];
+  const tituloBruto = (ad.title || "").trim();
+  const titulo = BOTOES.includes(tituloBruto.toLowerCase()) ? "" : tituloBruto;
   const corpo  = (ad.body  || "").trim();
   // sourceId e ctwaClid são o que permite ligar o lead ao anúncio no Meta e
   // calcular custo por lead. O texto do anúncio identifica para humano ler, mas
@@ -1248,7 +1257,11 @@ function extrairAnuncio(data, msg) {
     url:    (ad.sourceUrl || "").slice(0, 300),
     id,
     clid:   clid.slice(0, 255),
-    fonte:  (ci.conversionSource || ad.sourceType || "").slice(0, 40),
+    // sourceApp é o canal de verdade (instagram, facebook) e estava sendo
+    // descartado: 22 das 24 mensagens de tráfego da Sorrix vieram do Instagram
+    // e a gente registrava só "FB_Ads", que é o mesmo para os dois. Sem o
+    // canal não há como comparar criativo de Instagram com o de Facebook.
+    fonte:  [ad.sourceApp, ci.conversionSource || ad.sourceType].filter(Boolean).join("/").slice(0, 40),
   };
 }
 
@@ -1663,7 +1676,11 @@ function blocosDeContexto({ lead = null, knowledge = [], slots = null } = {}) {
   // quer, e receber um menu de categorias é retroceder. O conteúdo é peça de
   // marketing, não catálogo — por isso a instrução explícita de não tratar
   // preço de anúncio como preço válido.
-  if (lead?.anuncio_origem) {
+  // Gate no id também, não só no texto: o clique de anúncio pode chegar sem
+  // texto nenhum (medido uma vez nas 24 da Sorrix). Antes, esse lead ficava sem
+  // o bloco inteiro e perdia a regra de promoção do cliente justamente no caso
+  // em que a pessoa veio da promoção.
+  if (lead?.anuncio_origem || lead?.anuncio_id) {
     // A regra de como tratar preço e condição de anúncio é DE CADA CLIENTE.
     // Durante semanas este bloco foi escrito à mão com o mundo da TrailLand —
     // "tabela oficial", "R$ 1.500 em acessórios", "máquina" — e ia igual para
@@ -1676,13 +1693,21 @@ function blocosDeContexto({ lead = null, knowledge = [], slots = null } = {}) {
       `inteira e a condição real muda caso a caso. Se a pessoa citar um preço ou condição do anúncio, não ` +
       `confirme e não negue — diga que vai confirmar essa condição e encaminhe pelo caminho de suporte das ` +
       `suas instruções.`;
-    ctx += `\n\n<origem_anuncio>\n` +
-           `Esta pessoa chegou clicando num anúncio. Era isto que ela estava vendo:\n` +
-           `${lead.anuncio_origem}\n\n` +
-           `Use para saber do que ela já estava interessada: não pergunte de novo o que ela procura, ` +
-           `nem ofereça o menu de categorias. Puxe o assunto do próprio anúncio.\n` +
-           `${regra}\n` +
-           `</origem_anuncio>`;
+    ctx += `\n\n<origem_anuncio>\n`;
+    if (lead.anuncio_origem) {
+      ctx += `Esta pessoa chegou clicando num anúncio. Era isto que ela estava vendo:\n` +
+             `${lead.anuncio_origem}\n\n` +
+             `Use para saber do que ela já estava interessada: não pergunte de novo o que ela procura, ` +
+             `nem ofereça o menu de categorias. Puxe o assunto do próprio anúncio.\n`;
+    } else {
+      // Sem o texto, o que sobra é o fato: ela veio de anúncio. Não invente o
+      // que o anúncio dizia — e não finja que não houve anúncio, porque a regra
+      // de promoção do cliente vale igual.
+      ctx += `Esta pessoa chegou clicando num anúncio, mas o texto do anúncio não veio no clique. ` +
+             `Você NÃO sabe qual anúncio era: não suponha produto, preço nem promoção. ` +
+             `Pergunte o que ela viu, em uma frase, e siga daí.\n`;
+    }
+    ctx += `${regra}\n</origem_anuncio>`;
   }
 
   // Dias de atendimento já calculados, com feriado nacional e feriado próprio
