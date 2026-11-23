@@ -1745,9 +1745,16 @@ function blocosDeContexto({ lead = null, knowledge = [], slots = null } = {}) {
       const j = (ag.janelas || {})[d.diaSemana] || (ag.janelas || {}).padrao;
       return j ? ` — das ${j.abre} às ${j.ultimo}` : "";
     };
+    // "(hoje)" só no dia que REALMENTE é hoje, comparando a data. Antes era
+    // `i === 0 && !pularHoje`, que marcava o primeiro item da lista — e o
+    // primeiro item só é hoje quando hoje é dia de atendimento. No domingo a
+    // lista começa na segunda e a segunda vinha rotulada "(hoje)": em 22/11
+    // (domingo) ela ofereceu "hoje, dia 23" três vezes, e um paciente teve que
+    // responder "Hj domingo?" para ela perceber. Valia para feriado também.
+    const isoHoje = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}-${String(agora.getDate()).padStart(2, "0")}`;
     ctx += `\n\n<dias_de_atendimento>\n` +
            `Estes são os próximos dias em que a clínica atende, na ordem, já sem feriado e já sem os dias em que ela não abre:\n` +
-           dias.map((d, i) => `${i + 1}. ${d.rotulo}${janelaDe(d)}${i === 0 && !pularHoje ? " (hoje)" : ""}`).join("\n") + `\n\n` +
+           dias.map((d, i) => `${i + 1}. ${d.rotulo}${janelaDe(d)}${d.iso === isoHoje ? " (hoje)" : ""}`).join("\n") + `\n\n` +
            `OFEREÇA SEMPRE DESTA LISTA, de cima para baixo, e só horário DENTRO da faixa do dia escolhido. ` +
            `Está proibido oferecer data que não está aqui, oferecer horário fora da faixa daquele dia, ` +
            `e calcular dia da semana ou feriado por conta própria: se não está na lista, a clínica não atende.\n` +
@@ -1757,6 +1764,9 @@ function blocosDeContexto({ lead = null, knowledge = [], slots = null } = {}) {
                `. Nesses dias a clínica não atende | diga qual é o feriado e ofereça o próximo dia da lista.\n`
              : `Não há feriado nas próximas três semanas.\n`) +
            (pularHoje ? `Já passou do último horário de hoje, então hoje não entra.\n` : "") +
+           (dias.length && dias[0].iso !== isoHoje
+             ? `HOJE A CLÍNICA NÃO ATENDE: nenhum dos dias acima é hoje, e o primeiro da lista é o próximo dia útil. Não diga "hoje" nem "ainda hoje" para nenhum deles.\n`
+             : "") +
            `</dias_de_atendimento>`;
   }
 
