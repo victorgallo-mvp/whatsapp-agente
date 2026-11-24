@@ -982,12 +982,54 @@ const processingUsers   = new Set();
 const DEBOUNCE_MS       = AGENT_CONFIG.debounceMs || 5000;
 const POST_RESPONSE_MS  = 5000;
 
+// "Digitando..." enquanto a janela de debounce corre. Com 15 segundos de espera
+// — que é o que a Protásio pediu para conseguir ler a rajada inteira antes de
+// responder — o silêncio fica longo demais e a pessoa acha que ninguém viu a
+// mensagem. O indicador resolve isso e ainda reforça que do outro lado tem
+// gente. Ele expira sozinho em poucos segundos no WhatsApp, então é reenviado
+// a cada 4s até a resposta sair.
+const digitando = {};   // userId -> intervalo
+
+async function mostrarDigitando(userId) {
+  if (!AGENT_CONFIG.mostrarDigitando) return;
+  if (digitando[userId]) return;
+  // Lead com a IA pausada não pode ver "digitando": quem responde ali é gente,
+  // no tempo dela, e o indicador prometeria uma resposta que não vem da IA.
+  try {
+    const lead = await getLead(userId);
+    if (lead?.olivia_ativa === false) return;
+  } catch { /* se a consulta falhar, mostra mesmo assim: errar para o lado de parecer vivo */ }
+  const enviar = async () => {
+    try {
+      await axios.post(
+        `${EVOLUTION_URL}/chat/sendPresence/${EVOLUTION_INSTANCE}`,
+        { number: sanitizePhone(userId), presence: "composing", delay: 4000 },
+        { headers: EVOLUTION_HEADERS() }
+      );
+    } catch (err) {
+      // Indicador é enfeite: se falhar, a resposta continua saindo normalmente.
+      console.warn("[PRESENCE] falhou:", err.response?.status || err.message);
+      pararDigitando(userId);
+    }
+  };
+  if (digitando[userId]) return;   // outra rajada ligou enquanto a consulta corria
+  enviar();
+  digitando[userId] = setInterval(enviar, 4000);
+}
+
+function pararDigitando(userId) {
+  if (!digitando[userId]) return;
+  clearInterval(digitando[userId]);
+  delete digitando[userId];
+}
+
 function enfileirarMensagem(userId, item) {
   if (!pendingMessages[userId]) {
     pendingMessages[userId] = { timer: null, items: [] };
   }
   pendingMessages[userId].items.push(item);
   clearTimeout(pendingMessages[userId].timer);
+  mostrarDigitando(userId).catch(() => {});
 
   const sinceLastResponse = Date.now() - (lastResponseTime[userId] || 0);
   const emProcessamento   = processingUsers.has(userId);
@@ -1070,7 +1112,7 @@ async function processarMensagensPendentes(userId) {
   }
 
   const pending = pendingMessages[userId];
-  if (!pending) return;
+  if (!pending) { pararDigitando(userId); return; }
   delete pendingMessages[userId];
 
   processingUsers.add(userId);
@@ -1195,6 +1237,7 @@ async function processarMensagensPendentes(userId) {
     console.error("Erro ao processar mensagens:", err.response?.data || err.message);
   } finally {
     processingUsers.delete(userId);
+    pararDigitando(userId);
   }
 }
 
