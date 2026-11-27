@@ -126,6 +126,20 @@ module.exports = {
   debounceMs: 15000,
   mostrarDigitando: true,
 
+  // O número da Dani já atendia cliente antes da IA entrar: 401 chats, 7.639
+  // contatos e 54 mil mensagens vieram na vinculação, em 27/11/2026. Com isto
+  // ligado, quem já é contato salvo da loja não recebe resposta automática |
+  // é gente em atendimento, e a IA respondendo por cima é o pior estrago
+  // possível numa vinculação de número vivo. Rode /admin/contatos/retrato
+  // depois de conectar para popular a lista a partir da agenda do aparelho.
+  ignorarContatosConhecidos: true,
+
+  // Grupo "Avaliações de motos". A Dani pede as fotos da moto da troca e diz
+  // que mandou para avaliação; é daqui que a frase vira verdade. Só foto que
+  // a visão reconhece como moto, e só quando troca está na conversa (ver
+  // encaminharFotoAvaliacao no server.js): print de documento não entra.
+  grupoAvaliacao: "120363413944978319@g.us",
+
   // Colunas do painel de conversas. Sem isto a Protásio usava o funil padrão,
   // que é o da Viltrum: "Visita Agendada" ficava PERMANENTEMENTE vazia (só
   // recebe VISITA_SOLICITADA, que a Dani não emite) e PRECISA_SUPORTE não movia

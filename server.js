@@ -366,6 +366,48 @@ async function encaminharArteParaOperador(phone, rawMsg, caption) {
   }
 }
 
+// Foto de moto para avaliação de troca, encaminhada ao grupo que avalia. A IA
+// pede as fotos e diz que mandou para avaliação; sem isto, a frase é mentira e
+// a foto morre na conversa.
+//
+// DOIS FILTROS, E O SEGUNDO É DE SEGURANÇA. Só vai se a visão reconheceu uma
+// moto E se troca está na mesa. O filtro da moto não é só relevância: com a
+// ficha de financiamento pedindo CPF e documento, cliente manda print de RG e
+// de comprovante, e isso não pode cair num grupo com quatro pessoas.
+async function encaminharFotoAvaliacao(phone, rawMsg, caption, descricaoVisao) {
+  const grupo = AGENT_CONFIG.grupoAvaliacao;
+  if (!grupo || !rawMsg) return;
+  try {
+    const pareceMoto = /\bmoto|motocicleta|motoneta|scooter|guid[ãa]o|tanque|od[ôo]metro|pain[ée]l\b/i.test(descricaoVisao || "");
+    if (!pareceMoto) return;
+
+    const lead = await getLead(phone);
+    const q    = lead?.qualificacao?.campos || {};
+    const hist = (await getHistory(phone)).slice(-8).map(m => m.content).join(" ");
+    const temTroca = q.tem_troca === "sim" || !!q.moto_troca || /\btroca\b|dar na troca|dou minha moto/i.test(hist);
+    if (!temTroca) return;
+
+    const linhas = [
+      `AVALIAÇÃO DE TROCA — ${lead?.nome || "sem nome"} (${formatarTelefoneWA(phone)})`,
+      q.moto_troca ? `Moto: ${q.moto_troca}` : null,
+      q.modelo     ? `Quer levar: ${q.modelo}` : null,
+      q.cidade     ? `Cidade: ${q.cidade}` : null,
+      caption      ? `Legenda: "${caption}"` : null,
+      `Conversa: https://wa.me/${formatarTelefoneWA(phone).replace(/\D/g, "")}`,
+    ].filter(Boolean);
+
+    const { base64, mimetype } = await obterBase64Midia(rawMsg);
+    await axios.post(
+      `${EVOLUTION_URL}/message/sendMedia/${EVOLUTION_INSTANCE}`,
+      { number: grupo, mediatype: "image", media: base64, mimetype, caption: linhas.join("\n") },
+      { headers: EVOLUTION_HEADERS() }
+    );
+    console.log("[AVALIACAO] Foto encaminhada ao grupo para:", phone);
+  } catch (err) {
+    console.error("[AVALIACAO] Erro ao encaminhar foto:", err.response?.data || err.message);
+  }
+}
+
 // ─── VISÃO: ANÁLISE DE IMAGENS COM CLAUDE ────────────────────────────────────
 // Recebe o rawMsg, NÃO a URL. A mídia do WhatsApp trafega criptografada: baixar
 // a url direto devolve bytes cifrados, que a API de visão rejeita. O resultado
@@ -1588,6 +1630,7 @@ app.post("/webhook", async (req, res) => {
       }
 
       upsertLead(userId, {}).catch(err => console.error("[WEBHOOK] upsertLead imagem erro:", err.message));
+      encaminharFotoAvaliacao(userId, body.rawMsg, body.image.caption || "", descricao).catch(() => {});
       enfileirarMensagem(userId, { content: "[o cliente enviou uma imagem" + caption + descricao + "]" });
       return;
     }
