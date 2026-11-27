@@ -3386,7 +3386,7 @@ app.post("/admin/contatos/retrato", async (req, res) => {
       chats_lid_sem_telefone: lidSemTelefone,
       total_na_base: total.rows[0].n,
       aviso: lidSemTelefone
-        ? `${lidSemTelefone} conversas vieram só como @lid e não deu pra descobrir o telefone. Essas pessoas NÃO estão protegidas: se escreverem, a IA responde.`
+        ? `${lidSemTelefone} conversas vieram só como @lid, sem telefone. O LID foi gravado como chave, então essas pessoas ficam protegidas do mesmo jeito | o que não dá é cruzar o telefone delas com o resto do painel.`
         : undefined,
     });
   } catch (err) {
