@@ -3363,8 +3363,18 @@ app.post("/admin/contatos/retrato", async (req, res) => {
       const jid = c.remoteJid || c.id || c.jid || "";
       if (jid.endsWith("@g.us")) { grupos++; continue; }
       const p = soTelefone(jid) || soTelefone(c.lastMessage?.key?.remoteJidAlt);
-      if (p) achados.set(p, c.pushName || achados.get(p) || null);
-      else if (jid.endsWith("@lid")) lidSemTelefone++;
+      if (p) { achados.set(p, c.pushName || achados.get(p) || null); continue; }
+      // Conversa que veio só como @lid: o telefone não dá para descobrir, mas
+      // o LID em si serve de chave. Quando essa pessoa escreve, a mensagem
+      // chega com o mesmo LID, o parse usa o LID como identificador e a
+      // checagem de contato conhecido consulta por ele — então gravar o LID
+      // protege quem ficaria de fora. Na vinculação da Protásio eram 356
+      // conversas, todas de gente que a loja já atende.
+      if (jid.endsWith("@lid")) {
+        lidSemTelefone++;
+        const lid = jid.replace(/@lid$/, "").replace(/\D/g, "");
+        if (lid) achados.set(lid, c.pushName || achados.get(lid) || "(contato por @lid)");
+      }
     }
 
     if (req.query.reset === "1") await db.query(`DELETE FROM contatos_conhecidos`);
