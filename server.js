@@ -184,6 +184,12 @@ async function initDb() {
   // a cada rodada. Um aviso que repete de 5 em 5 minutos é um aviso que a
   // equipe aprende a ignorar, e aí deixa de ser aviso.
   await db.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS escalado_em TIMESTAMPTZ`);
+  // Quem já falava com a loja antes da IA. A conversa continua sendo gravada,
+  // porque cliente antigo que volta para comprar outra moto É lead e descobrir
+  // isso depende de ter o histórico — mas ele não entra na fila por padrão.
+  // Num número com 5.994 contatos conhecidos, sem esta marca o painel vira o
+  // WhatsApp inteiro da loja em vez da fila de leads.
+  await db.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS contato_conhecido BOOLEAN DEFAULT FALSE`);
 
   // Migra dados existentes da tabela clientes
   await db.query(`
@@ -1478,7 +1484,18 @@ app.post("/webhook", async (req, res) => {
         else if (body.contact)    registro = "[DIRETO] (contato enviado)";
         else                      registro = "[DIRETO] (mensagem enviada)";
 
-        upsertLead(body.phone, {}).catch(err => console.error("[WEBHOOK] upsertLead fromMe erro:", err.message));
+        // Quem cria o lead aqui é a RESPOSTA DO HUMANO, não a mensagem do
+        // cliente — e era por isso que o painel enchia com conversa normal da
+        // loja: o contato conhecido não virava lead sozinho, mas virava assim
+        // que alguém respondia. Herda a marca para não entrar na fila.
+        await upsertLead(body.phone, {}).catch(err => console.error("[WEBHOOK] upsertLead fromMe erro:", err.message));
+        if (AGENT_CONFIG.ignorarContatosConhecidos) {
+          await db.query(
+            `UPDATE leads SET contato_conhecido = TRUE
+              WHERE phone = $1 AND EXISTS (SELECT 1 FROM contatos_conhecidos c WHERE c.phone = $1)`,
+            [foneBody]
+          ).catch(() => {});
+        }
         await addToHistory(body.phone, "assistant", registro);
 
         const res = await db.query(
@@ -1522,7 +1539,10 @@ app.post("/webhook", async (req, res) => {
       if (conhecido.rows[0]) {
         const texto = body.text?.message || (body.audio ? "(áudio)" : body.image ? "(imagem)" : "(mensagem)");
         await addToHistory(body.phone, "user", texto);
-        await db.query(`UPDATE leads SET olivia_ativa = FALSE WHERE phone = $1`, [body.phone]).catch(() => {});
+        await db.query(
+          `UPDATE leads SET olivia_ativa = FALSE, contato_conhecido = TRUE WHERE phone = $1`,
+          [body.phone]
+        ).catch(() => {});
         broadcastSSE("leads_update", { phone: body.phone });
         console.log("[CONTATO CONHECIDO] Sem resposta automática para:", foneBody, conhecido.rows[0].nome || "");
         return;
@@ -2848,14 +2868,21 @@ app.get("/api/leads", async (req, res) => {
               l.anuncio_id, l.anuncio_ctwa_clid, l.anuncio_url, l.anuncio_fonte,
               l.profile, l.last_summary,
               l.qualificacao, l.score, l.temperatura, l.qualificacao_updated_at, l.created_at,
-              l.passado_em, l.assumido_por, l.assumido_em,
+              l.passado_em, l.assumido_por, l.assumido_em, l.contato_conhecido,
               m.content AS ultima_mensagem, m.role AS ultima_role
        FROM leads l
        LEFT JOIN LATERAL (
          SELECT content, role FROM mensagens WHERE user_id = l.phone ORDER BY created_at DESC LIMIT 1
        ) m ON TRUE
+       WHERE ($2 = TRUE OR l.contato_conhecido IS NOT TRUE)
        ORDER BY l.last_interaction_at DESC NULLS LAST LIMIT $1`,
-      [Math.min(Math.max(parseInt(req.query.limit, 10) || 200, 1), 1000)]
+      [
+        Math.min(Math.max(parseInt(req.query.limit, 10) || 200, 1), 1000),
+        // Conversa de quem a loja já atendia não entra na fila: ela continua
+        // gravada e acessível com ?incluirConhecidos=1, mas o painel existe
+        // para mostrar lead, não o WhatsApp inteiro da loja.
+        req.query.incluirConhecidos === "1",
+      ]
     );
 
     // Coluna do kanban calculada AQUI, numa query só. A tela fazia um fetch de
