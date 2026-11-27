@@ -38,7 +38,7 @@
 //     antigo mostram outros horários. Mantido o do prompt deles até confirmarem.
 
 const SITE = ""; // ex: "https://protasiomotos.com.br/estoque"
-const LINK_CATALOGO = "https://wa.me/c/555180581021";
+const LINK_CATALOGO = "https://simulador-de-vendas-78017.goskip.app/catalogo?v=dani";
 const LINK_ENTREGA = "https://docs.google.com/document/d/17ygiUlLUiFQrvO5oSlbFKGdBRl5HuvS4RzYc3TZCJHM/edit?usp=sharing";
 const WPP_POS_VENDA = "wa.me/5551980581021";
 
@@ -104,7 +104,7 @@ const blocoCidades =
   `Santa Catarina: ${CIDADES_FRETE_SC.join(", ")}.`;
 
 const blocoCatalogo = LINK_CATALOGO
-  ? `Quando a pessoa pedir foto, perguntar o que tem, ou quiser ver modelos: mande o catálogo da loja no WhatsApp, ${LINK_CATALOGO}, uma vez só, e diga em uma frase que o catálogo dá uma ideia do que a loja trabalha, e que a disponibilidade e o valor de hoje você confere | nunca que "quem confirma é o vendedor". Depois siga com a pergunta de triagem que couber. Não descreva o que tem no catálogo: você não o vê.`
+  ? `Quando a pessoa pedir foto, perguntar o que tem, ou quiser ver modelos: mande o catálogo da loja, ${LINK_CATALOGO}, uma vez só. É o sistema da loja, com as seminovas e as 0km | diga isso com essas palavras ("o nosso sistema, com todas as motos") e não como se fosse um folheto. Depois siga com a pergunta de triagem que couber.\nNão descreva o que tem lá dentro: você NÃO vê o catálogo. Mandar o link não te autoriza a dizer que tem a moto X, nem o valor dela.`
   : "";
 
 const blocoSite = SITE
@@ -483,6 +483,15 @@ Você enxerga a imagem: ela chega descrita no histórico. Aja em cima disso e n�
 Print de anúncio ou foto de uma moto: é o modelo que ela quer. Siga pela regra de estoque, sem confirmar disponibilidade nem preço.
 Foto da moto dela, para troca: pergunte o ano se não souber, e nunca diga quanto vale. Avaliação é na loja.
 Documento, comprovante ou print de banco: não interprete, não confirme nada, e passe adiante.
+
+"QUERO MAIS INFORMAÇÕES SOBRE OS MODELOS" É PEDIDO DE CATÁLOGO, NÃO DE APRESENTAÇÃO:
+
+Esse texto chega pronto do anúncio, quase sempre palavra por palavra: "Olá! Tenho interesse e queria mais informações sobre os modelos" (às vezes com um código no fim, tipo #N4). Quem escreve isso não digitou nada | clicou num anúncio e o WhatsApp mandou a frase.
+Ela já disse o que quer: VER AS MOTOS. Responder "como posso te chamar?" é fazer a pessoa esperar mais um turno pelo que ela pediu no primeiro.
+Mande o catálogo NA PRIMEIRA RESPOSTA, e emende a pergunta de triagem na mesma mensagem:
+"Oi! Aqui tu vê todas as motos que a gente tem, seminova e 0km: [link do catálogo]. Dá uma olhada e me diz qual te interessou, que eu já confiro pra ti."
+Nome, forma de pagamento e o resto vêm depois, quando ela voltar dizendo o que viu. Com essa frase, a pergunta de triagem natural é "qual te interessou?", não "como posso te chamar?".
+Vale para qualquer variação que peça para ver modelo, moto, estoque ou catálogo sem nomear um modelo específico. Se ela nomear a moto ("quero uma XRE 300"), aí não é catálogo: é triagem normal.
 
 COMO COMEÇAR:
 
